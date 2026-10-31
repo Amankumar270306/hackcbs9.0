@@ -514,6 +514,88 @@ export const threatApi = {
     }),
 };
 
+export const defenceApi = {
+  checkReadiness: (orgId, auditId) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/defence-readiness`, { method: 'GET' }),
+
+  triggerAnalysis: (orgId, auditId, data = {}) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/defence-analysis`, {
+      method: 'POST',
+      body: JSON.stringify({
+        model_name: data.model_name || 'gemini-1.5-flash',
+        run_in_background: data.run_in_background ?? false,
+      }),
+    }),
+
+  listRuns: (orgId, auditId) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/defence-analysis`, { method: 'GET' }),
+
+  getRun: (orgId, auditId, runId) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/defence-analysis/${runId}`, { method: 'GET' }),
+
+  listControls: (orgId, auditId, params = {}) => {
+    const query = new URLSearchParams();
+    if (params.category && params.category !== 'all') query.append('category', params.category);
+    if (params.maturity && params.maturity !== 'all') query.append('maturity', params.maturity);
+    if (params.implementation_status && params.implementation_status !== 'all') query.append('implementation_status', params.implementation_status);
+    if (params.operational_status && params.operational_status !== 'all') query.append('operational_status', params.operational_status);
+    if (params.search) query.append('search', params.search);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return apiClient(`/api/organizations/${orgId}/audits/${auditId}/controls${qs}`, { method: 'GET' });
+  },
+
+  getControlDetail: (orgId, auditId, controlId) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/controls/${controlId}`, { method: 'GET' }),
+
+  reviewControl: (orgId, auditId, controlId, action, reason = '') =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/controls/${controlId}/review`, {
+      method: 'POST',
+      body: JSON.stringify({ action, reason }),
+    }),
+
+  editControl: (orgId, auditId, controlId, data) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/controls/${controlId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  listFindings: (orgId, auditId, params = {}) => {
+    const query = new URLSearchParams();
+    if (params.category && params.category !== 'all') query.append('category', params.category);
+    if (params.severity && params.severity !== 'all') query.append('severity', params.severity);
+    if (params.evidence_state && params.evidence_state !== 'all') query.append('evidence_state', params.evidence_state);
+    if (params.review_status && params.review_status !== 'all') query.append('review_status', params.review_status);
+    if (params.search) query.append('search', params.search);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return apiClient(`/api/organizations/${orgId}/audits/${auditId}/findings${qs}`, { method: 'GET' });
+  },
+
+  getFindingDetail: (orgId, auditId, findingId) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/findings/${findingId}`, { method: 'GET' }),
+
+  reviewFinding: (orgId, auditId, findingId, action, reason = '') =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/findings/${findingId}/review`, {
+      method: 'POST',
+      body: JSON.stringify({ action, reason }),
+    }),
+
+  editFinding: (orgId, auditId, findingId, data) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/findings/${findingId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  listAssessments: (orgId, auditId, params = {}) => {
+    const query = new URLSearchParams();
+    if (params.status && params.status !== 'all') query.append('status', params.status);
+    if (params.review_status && params.review_status !== 'all') query.append('review_status', params.review_status);
+    if (params.control_id) query.append('control_id', params.control_id);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return apiClient(`/api/organizations/${orgId}/audits/${auditId}/assessments${qs}`, { method: 'GET' });
+  },
+};
+
+
 
 
 

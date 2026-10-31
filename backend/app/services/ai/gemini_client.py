@@ -183,6 +183,104 @@ class MockGeminiClient(BaseGeminiClient):
         if self.responses:
             return self.responses.pop(0)
 
+        # Check if this is a defence auditor request
+        is_defence_prompt = (
+            (system_instruction and "Defence Auditor" in system_instruction)
+            or "EVALUATE_DEFENCE_CONTROLS_AND_GAPS" in prompt
+            or "Defence Auditor" in prompt
+        )
+
+        if is_defence_prompt:
+            req_ids: List[str] = []
+            threat_ids: List[str] = []
+            chunk_list: List[Dict[str, Any]] = []
+            try:
+                if "INPUT AUDIT DATA & EVIDENCE CHUNKS:" in prompt:
+                    raw_json = prompt.split("INPUT AUDIT DATA & EVIDENCE CHUNKS:")[1].split("Respond ONLY with")[0].strip()
+                    parsed = json.loads(raw_json)
+                    for r in parsed.get("applicable_regulatory_requirements", []):
+                        if r.get("requirement_id"):
+                            req_ids.append(r["requirement_id"])
+                    for t in parsed.get("threat_scenarios", []):
+                        if t.get("threat_id"):
+                            threat_ids.append(t["threat_id"])
+                    for c in parsed.get("evidence_document_chunks", []):
+                        if c.get("chunk_id"):
+                            chunk_list.append(c)
+            except Exception:
+                pass
+
+            primary_req_id = req_ids[0] if req_ids else None
+            primary_threat_id = threat_ids[0] if threat_ids else None
+            sample_chunk = chunk_list[0] if chunk_list else {}
+            sample_text = sample_chunk.get("content", "Enforce multi-factor authentication for remote access")
+            excerpt = sample_text[:100] if len(sample_text) > 100 else sample_text
+
+            return {
+                "controls": [
+                    {
+                        "control_code": "CTRL-001",
+                        "name": "Multi-Factor Authentication on Remote Administrative Portals",
+                        "description": "Enforces MFA using TOTP or hardware tokens on all administrative endpoints.",
+                        "category": "Access Control",
+                        "control_objective": "Prevent unauthorized remote administrative access and credential stuffing attacks.",
+                        "implementation_status": "documented",
+                        "operational_status": "active",
+                        "evidence_maturity": "implementation",
+                        "confidence_score": 0.95,
+                        "requirement_ids": [primary_req_id] if primary_req_id else [],
+                        "threat_ids": [primary_threat_id] if primary_threat_id else [],
+                        "evidence_citations": [
+                            {
+                                "chunk_id": sample_chunk.get("chunk_id"),
+                                "document_id": sample_chunk.get("document_id"),
+                                "filename": sample_chunk.get("filename", "security_policy.pdf"),
+                                "page_number": sample_chunk.get("page_number", 1),
+                                "section_title": sample_chunk.get("section_title", "Access Control"),
+                                "exact_excerpt": excerpt,
+                                "citation_type": "direct_evidence",
+                                "evidence_maturity": "implementation",
+                                "relevance_explanation": "Directly supports implementation of MFA for remote access.",
+                            }
+                        ],
+                    }
+                ],
+                "assessments": [
+                    {
+                        "control_code": "CTRL-001",
+                        "requirement_id": primary_req_id,
+                        "threat_id": primary_threat_id,
+                        "status": "effective_documented_control",
+                        "evidence_maturity": "implementation",
+                        "assessment_explanation": "Control is thoroughly documented with technical specifications for MFA enforcement.",
+                        "evidence_limitations": "Quarterly review records not attached.",
+                        "missing_information": "Okta / IdP audit logs for past 90 days.",
+                        "contradictions": None,
+                        "recommended_next_steps": "Export and attach IdP sign-in audit logs.",
+                        "confidence_score": 0.92,
+                    }
+                ],
+                "findings": [
+                    {
+                        "finding_code": "GAP-001",
+                        "title": "Absence of Operational Audit Logs for Multi-Factor Authentication",
+                        "description": "While policy and architecture document MFA deployment, no operational logs or telemetry were submitted to prove continuous enforcement.",
+                        "finding_category": "operational_evidence_gap",
+                        "severity": "medium",
+                        "evidence_state": "insufficient_evidence",
+                        "likelihood_score": 3,
+                        "impact_score": 3,
+                        "is_provisional": False,
+                        "confidence_score": 0.88,
+                        "remediation_recommendation": "Configure automated log export from IdP to SIEM and retain 365 days of authentication logs.",
+                        "related_control_codes": ["CTRL-001"],
+                        "related_requirement_ids": [primary_req_id] if primary_req_id else [],
+                        "related_threat_ids": [primary_threat_id] if primary_threat_id else [],
+                        "evidence_citations": [],
+                    }
+                ],
+            }
+
         # Check if this is a threat modeling request
         is_threat_prompt = (
             (system_instruction and "Adversarial Strategist" in system_instruction)

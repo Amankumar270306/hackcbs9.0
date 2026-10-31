@@ -38,6 +38,16 @@ from app.database.models.threats import (
     ThreatAuditHistory,
     ThreatEvidenceReference,
 )
+from app.database.models.defence import (
+    DefenceAnalysisRun,
+    DiscoveredControl,
+    ControlRequirementMapping,
+    ControlThreatMapping,
+    ControlEvidenceReference,
+    ControlAuditHistory,
+    FindingControl,
+    FindingAuditHistory,
+)
 from app.database.models.findings import (
     Finding,
     EvidenceReference,
@@ -52,6 +62,11 @@ from app.database.models.agents import (
 from app.database.models.adjudication import (
     AdjudicationQuestion,
     AdjudicationAnswer,
+    AdjudicationRun,
+    AdjudicationDecision,
+    AdjudicationSource,
+    AdjudicationContradiction,
+    AdjudicationAuditHistory,
 )
 from app.database.models.reports import (
     Report,
@@ -90,6 +105,15 @@ __all__ = [
     "ThreatRequirementMapping",
     "ThreatAuditHistory",
     "ThreatEvidenceReference",
+    # Defence Auditor (Milestone 6)
+    "DefenceAnalysisRun",
+    "DiscoveredControl",
+    "ControlRequirementMapping",
+    "ControlThreatMapping",
+    "ControlEvidenceReference",
+    "ControlAuditHistory",
+    "FindingControl",
+    "FindingAuditHistory",
     # Findings & Evidence
     "Finding",
     "EvidenceReference",
@@ -99,9 +123,14 @@ __all__ = [
     "AgentRun",
     "AgentEvent",
     "AgentOutput",
-    # Human Adjudication
+    # Adjudication & Consensus (Milestone 7)
     "AdjudicationQuestion",
     "AdjudicationAnswer",
+    "AdjudicationRun",
+    "AdjudicationDecision",
+    "AdjudicationSource",
+    "AdjudicationContradiction",
+    "AdjudicationAuditHistory",
     # Reports
     "Report",
 ]

@@ -11,11 +11,13 @@ import {
   Layers, 
   ArrowRight,
   FileText,
-  Shield
+  Shield,
+  ShieldCheck
 } from 'lucide-react';
 import AuditDocumentsSection from './AuditDocumentsSection';
 import AuditRequirementsTab from './AuditRequirementsTab';
 import ThreatAnalysisSection from './ThreatAnalysisSection';
+import DefenceAuditorSection from './DefenceAuditorSection';
 
 export default function AuditDetailsModal({ audit, onClose }) {
   if (!audit) return null;
@@ -87,6 +89,18 @@ export default function AuditDetailsModal({ audit, onClose }) {
           </button>
 
           <button
+            onClick={() => setActiveTab('defence')}
+            className={`py-3 flex items-center space-x-2 border-b-2 cursor-pointer transition-colors ${
+              activeTab === 'defence'
+                ? 'border-emerald-600 text-emerald-600'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <ShieldCheck className="h-4 w-4" />
+            <span>Defence Auditor &amp; Controls</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('consensus')}
             className={`py-3 flex items-center space-x-2 border-b-2 cursor-pointer transition-colors ${
               activeTab === 'consensus'
@@ -110,6 +124,8 @@ export default function AuditDetailsModal({ audit, onClose }) {
             <AuditRequirementsTab audit={audit} />
           ) : activeTab === 'threats' ? (
             <ThreatAnalysisSection audit={audit} />
+          ) : activeTab === 'defence' ? (
+            <DefenceAuditorSection audit={audit} />
           ) : (
             <div className="space-y-5">
               {/* Top Summary Bar */}

@@ -459,16 +459,85 @@ $$\text{Risk Score} = \text{Likelihood Score} \times \text{Impact Score}$$
 
 ---
 
-## 6. Automated Testing Suite
+## 6. Defence Auditor: Safeguards, Evidence Quality & Gap Assessment (Milestone 6)
 
-All 39 backend unit, integration, and security test cases execute against the live YugabyteDB YSQL instance:
+### 6.1 Defence Analysis Pipeline & Methodology
+
+The Defence Auditor evaluates documented security safeguards and controls from audit evidence against approved regulatory requirements (M4) and eligible threat scenarios (M5):
+
+```mermaid
+flowchart TD
+    Evidence["Audit Documents & Chunks\n(Policies, SOPs, Architecture, Telemetry)"] --> Discovery["Control Discovery & Classification\n(Evidence Maturity: policy, design, implementation, operational)"]
+    M4Reqs["Approved Regulatory Requirements\n(M4 Knowledge Base)"] --> Assessment["Control Evaluation & Mapping"]
+    M5Threats["STRIDE Threats\n(Accepted = Full, Pending = Provisional)"] --> Assessment
+    Discovery --> Assessment
+
+    Assessment --> Verification["Verbatim Citation Verification\n(Exact substring match in document chunks)"]
+    Verification --> Outcomes{"Outcome Determination"}
+
+    Outcomes -->|Sufficient Operational Evidence| Effective["effective_documented_control"]
+    Outcomes -->|Design/Policy Only| Partial["partially_supported_control"]
+    Outcomes -->|Missing Evidence| Insufficient["insufficient_evidence"]
+    Outcomes -->|Conflicting Claims| Contradictory["contradictory_evidence"]
+    Outcomes -->|Known Vulnerability / Missing Control| Weakness["confirmed_weakness"]
+
+    Outcomes --> FindingsGen["Gap Finding Generation\n(Deterministic Scoring: L x I)"]
+    FindingsGen --> ReviewQueue["Human Review Workflow & Audit Trail\n(Approve / Reject / Edit / Request More Info)"]
+```
+
+### 6.2 Evidence Maturity Levels
+- **`policy`**: Written intention, mandate, or organizational policy statement without design or implementation proof.
+- **`design`**: Architecture diagram, specification document, system blueprint, or RFC.
+- **`implementation`**: Deployed configuration, code repository excerpt, or infrastructure-as-code snippet.
+- **`operational`**: Verified execution evidence, active telemetry, audit logs, monitoring alert screenshots, or recurring reports.
+
+### 6.3 Deterministic Risk Scoring Formula
+Risk scores are calculated using a strict deterministic formula:
+$$\text{risk\_score} = \text{likelihood\_score} \times \text{impact\_score}$$
+Both $\text{likelihood\_score}$ and $\text{impact\_score}$ are discrete integers from 1 to 5.
+
+Severity rating boundaries:
+- **Low**: $1 \le \text{risk\_score} \le 4$
+- **Medium**: $5 \le \text{risk\_score} \le 9$
+- **High**: $10 \le \text{risk\_score} \le 14$
+- **Very High**: $15 \le \text{risk\_score} \le 19$
+- **Critical**: $20 \le \text{risk\_score} \le 25$
+
+### 6.4 Defence Auditor Endpoints Reference
+
+| Endpoint | Method | Role | Description |
+|---|---|---|---|
+| `/api/organizations/{org_id}/audits/{audit_id}/defence-readiness` | `GET` | Member | Verify pre-flight readiness (document chunks, approved requirements, threat scenarios). |
+| `/api/organizations/{org_id}/audits/{audit_id}/defence-analysis` | `POST` | Auditor+ | Trigger background Defence Auditor analysis run with configurable model and focus areas. |
+| `/api/organizations/{org_id}/audits/{audit_id}/defence-analysis` | `GET` | Member | List historical defence analysis runs with execution parameters and counts. |
+| `/api/organizations/{org_id}/audits/{audit_id}/defence-analysis/{run_id}` | `GET` | Member | Retrieve specific analysis run details, status, logs, and execution duration. |
+| `/api/organizations/{org_id}/audits/{audit_id}/controls` | `GET` | Member | List discovered controls with filtering by category, maturity, implementation status, and search. |
+| `/api/organizations/{org_id}/audits/{audit_id}/controls/{control_id}` | `GET` | Member | Retrieve full control details, requirement mappings, threat mappings, and verified citations. |
+| `/api/organizations/{org_id}/audits/{audit_id}/controls/{control_id}` | `PATCH` | Auditor+ | Edit control details, implementation status, and documentation notes with audit trail. |
+| `/api/organizations/{org_id}/audits/{audit_id}/controls/{control_id}/review` | `POST` | Auditor+ | Review control (`approve`, `reject` with mandatory reason, `request_more_information`, `reassess`). |
+| `/api/organizations/{org_id}/audits/{audit_id}/findings` | `GET` | Member | List gap assessment findings with severity, category, provisional status, and review filters. |
+| `/api/organizations/{org_id}/audits/{audit_id}/findings/{finding_id}` | `GET` | Member | Retrieve full finding details, linked controls, mapped threats, and remediation steps. |
+| `/api/organizations/{org_id}/audits/{audit_id}/findings/{finding_id}` | `PATCH` | Auditor+ | Edit finding parameters with automatic deterministic risk recalculation and audit history. |
+| `/api/organizations/{org_id}/audits/{audit_id}/findings/{finding_id}/review` | `POST` | Auditor+ | Review finding (`approve`, `reject` with reason, `request_more_information`, `suppress`, `resolve`). |
+
+---
+
+## 7. Automated Testing Suite
+
+All 44 backend unit, integration, and security test cases execute against the live YugabyteDB YSQL instance:
 
 ```bash
 # Run the complete test suite
 PYTHONPATH=backend backend/venv/bin/pytest backend/tests/ -v
 ```
 
-### Test Coverage Highlights (39/39 Passing):
+### Test Coverage Highlights (44/44 Passing):
+- **`test_defence_auditor.py` (5 tests)**:
+  - Deterministic risk scoring formula ($L \times I$) and strict severity boundary mapping (1–4: Low, 5–9: Medium, 10–14: High, 15–19: Very High, 20–25: Critical).
+  - Defence readiness pre-flight check and validation messages.
+  - End-to-end Defence Auditor pipeline with `MockGeminiClient` (control discovery, evidence maturity classification, verbatim citation verification, threat/requirement mappings, gap finding generation).
+  - Human review workflows for controls and findings (`approve`, `reject` with mandatory reason, `edit`, `request_more_information`, and immutable `ControlAuditHistory`/`FindingAuditHistory` trails).
+  - Cross-tenant security isolation ensuring cross-tenant control and finding queries return HTTP 404.
 - **`test_threat_analysis.py` (5 tests)**:
   - Deterministic risk scoring formula ($L \times I$) and strict severity boundary mapping.
   - Threat analysis readiness pre-flight check and advisory validation messages.
@@ -497,13 +566,13 @@ PYTHONPATH=backend backend/venv/bin/pytest backend/tests/ -v
   - Last-owner demotion & removal prevention guardrails.
   - Audit case creation, filtering, and concurrent run number allocation.
 - **`test_database_schema.py` & `test_tenant_isolation.py` (11 tests)**:
-  - 27-table schema and relational constraint verification.
+  - Schema integrity across all 35 relational tables in YugabyteDB.
   - Composite foreign key constraint integrity.
   - Cross-tenant reference rejection by database triggers.
 
 ---
 
-## 7. Running with Docker Compose
+## 8. Running with Docker Compose
 
 ```bash
 # 1. Clone repository and copy environment template

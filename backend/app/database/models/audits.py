@@ -23,7 +23,7 @@ from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 if TYPE_CHECKING:
     from app.database.models.identity import Organization, User
     from app.database.models.documents import AuditDocument
-    from app.database.models.assessments import Requirement, Threat
+    from app.database.models.assessments import Requirement, Threat, ControlAssessment
     from app.database.models.findings import Finding
     from app.database.models.agents import AgentRun
     from app.database.models.reports import Report
@@ -32,6 +32,15 @@ if TYPE_CHECKING:
         AttackSurface,
         DiscoveredAsset,
         ThreatAnalysisRun,
+    )
+    from app.database.models.defence import (
+        DefenceAnalysisRun,
+        DiscoveredControl,
+    )
+    from app.database.models.adjudication import (
+        AdjudicationRun,
+        AdjudicationDecision,
+        AdjudicationContradiction,
     )
 
 
@@ -110,6 +119,62 @@ class Audit(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         foreign_keys="[Threat.audit_id]",
         cascade="all, delete-orphan",
         order_by="Threat.created_at.desc()",
+    )
+    defence_analysis_runs: Mapped[List[DefenceAnalysisRun]] = relationship(
+        "DefenceAnalysisRun",
+        back_populates="audit",
+        primaryjoin="Audit.id == DefenceAnalysisRun.audit_id",
+        foreign_keys="[DefenceAnalysisRun.audit_id]",
+        cascade="all, delete-orphan",
+        order_by="DefenceAnalysisRun.created_at.desc()",
+    )
+    discovered_controls: Mapped[List[DiscoveredControl]] = relationship(
+        "DiscoveredControl",
+        back_populates="audit",
+        primaryjoin="Audit.id == DiscoveredControl.audit_id",
+        foreign_keys="[DiscoveredControl.audit_id]",
+        cascade="all, delete-orphan",
+        order_by="DiscoveredControl.created_at.desc()",
+    )
+    control_assessments: Mapped[List[ControlAssessment]] = relationship(
+        "ControlAssessment",
+        back_populates="audit",
+        primaryjoin="Audit.id == ControlAssessment.audit_id",
+        foreign_keys="[ControlAssessment.audit_id]",
+        cascade="all, delete-orphan",
+        order_by="ControlAssessment.created_at.desc()",
+    )
+    findings: Mapped[List[Finding]] = relationship(
+        "Finding",
+        back_populates="audit",
+        primaryjoin="Audit.id == Finding.audit_id",
+        foreign_keys="[Finding.audit_id]",
+        cascade="all, delete-orphan",
+        order_by="Finding.created_at.desc()",
+    )
+    adjudication_runs: Mapped[List[AdjudicationRun]] = relationship(
+        "AdjudicationRun",
+        back_populates="audit",
+        primaryjoin="Audit.id == AdjudicationRun.audit_id",
+        foreign_keys="[AdjudicationRun.audit_id]",
+        cascade="all, delete-orphan",
+        order_by="AdjudicationRun.created_at.desc()",
+    )
+    adjudication_decisions: Mapped[List[AdjudicationDecision]] = relationship(
+        "AdjudicationDecision",
+        back_populates="audit",
+        primaryjoin="Audit.id == AdjudicationDecision.audit_id",
+        foreign_keys="[AdjudicationDecision.audit_id]",
+        cascade="all, delete-orphan",
+        order_by="AdjudicationDecision.created_at.desc()",
+    )
+    adjudication_contradictions: Mapped[List[AdjudicationContradiction]] = relationship(
+        "AdjudicationContradiction",
+        back_populates="audit",
+        primaryjoin="Audit.id == AdjudicationContradiction.audit_id",
+        foreign_keys="[AdjudicationContradiction.audit_id]",
+        cascade="all, delete-orphan",
+        order_by="AdjudicationContradiction.created_at.desc()",
     )
 
     __table_args__ = (

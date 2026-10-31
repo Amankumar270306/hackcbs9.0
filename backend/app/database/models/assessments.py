@@ -22,7 +22,7 @@ from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
     from app.database.models.audits import Audit, AuditRun
-    from app.database.models.identity import User
+    from app.database.models.identity import Organization, User
     from app.database.models.regulatory import (
         AuditRequirement,
         RegulatoryDocument,
@@ -37,6 +37,12 @@ if TYPE_CHECKING:
         ThreatAuditHistory,
         ThreatEvidenceReference,
         ThreatRequirementMapping,
+    )
+    from app.database.models.defence import (
+        DefenceAnalysisRun,
+        DiscoveredControl,
+        ControlEvidenceReference,
+        ControlAuditHistory,
     )
 
 
@@ -373,48 +379,102 @@ class ControlAssessment(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "control_assessments"
 
     organization_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    audit_run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    requirement_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    threat_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    audit_run_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    audit_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("audits.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    control_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("discovered_controls.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    defence_analysis_run_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("defence_analysis_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    requirement_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("requirements.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    threat_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("threats.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     status: Mapped[str] = mapped_column(String(50), nullable=False)
-    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    rationale: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    assessment_explanation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    evidence_maturity: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    evidence_limitations: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    missing_information: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    contradictions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    recommended_next_steps: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     confidence_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 2, asdecimal=False), nullable=True)
+    review_status: Mapped[str] = mapped_column(String(50), default="pending_review", nullable=False)
+    review_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reviewed_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    assessment_metadata: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
 
     # Relationships
-    requirement: Mapped[Requirement] = relationship("Requirement", back_populates="control_assessments")
+    audit: Mapped[Optional[Audit]] = relationship("Audit", back_populates="control_assessments")
+    audit_run: Mapped[Optional[AuditRun]] = relationship(
+        "AuditRun",
+        foreign_keys=[audit_run_id],
+        primaryjoin="ControlAssessment.audit_run_id == AuditRun.id",
+    )
+    control: Mapped[Optional[DiscoveredControl]] = relationship("DiscoveredControl", back_populates="assessments")
+    defence_run: Mapped[Optional[DefenceAnalysisRun]] = relationship("DefenceAnalysisRun", back_populates="assessments")
+    requirement: Mapped[Optional[Requirement]] = relationship("Requirement", back_populates="control_assessments")
     threat: Mapped[Optional[Threat]] = relationship(
         "Threat",
         back_populates="control_assessments",
         overlaps="requirement,control_assessments",
     )
+    reviewer: Mapped[Optional[User]] = relationship("User", foreign_keys=[reviewed_by])
+
+    def __init__(self, **kwargs: Any) -> None:
+        if "assessment_explanation" in kwargs and "rationale" not in kwargs:
+            kwargs["rationale"] = kwargs["assessment_explanation"]
+        elif "rationale" in kwargs and "assessment_explanation" not in kwargs:
+            kwargs["assessment_explanation"] = kwargs["rationale"]
+        super().__init__(**kwargs)
 
     __table_args__ = (
-        ForeignKeyConstraint(
-            ["organization_id", "audit_run_id", "requirement_id"],
-            ["requirements.organization_id", "requirements.audit_run_id", "requirements.id"],
-            ondelete="CASCADE",
-            name="fk_ctrl_assess_org_run_req",
-        ),
-        ForeignKeyConstraint(
-            ["organization_id", "audit_run_id", "threat_id"],
-            ["threats.organization_id", "threats.audit_run_id", "threats.id"],
-            ondelete="RESTRICT",
-            name="fk_ctrl_assess_org_run_threat",
-        ),
-        UniqueConstraint("organization_id", "audit_run_id", "id", name="uq_ctrl_assess_org_run_id"),
         CheckConstraint(
-            "status IN ('satisfied', 'partially_satisfied', 'not_satisfied', 'not_documented', 'not_applicable', 'needs_review')",
+            "status IN ('effective_documented_control', 'partially_supported_control', 'insufficient_evidence', 'contradictory_evidence', 'confirmed_weakness', 'not_applicable', 'satisfied', 'partially_satisfied', 'not_satisfied', 'not_documented', 'needs_review')",
             name="ck_ctrl_assess_status",
+        ),
+        CheckConstraint(
+            "evidence_maturity IS NULL OR evidence_maturity IN ('policy', 'design', 'implementation', 'operational')",
+            name="ck_ctrl_assess_maturity",
+        ),
+        CheckConstraint(
+            "review_status IN ('pending_review', 'approved', 'rejected', 'edited', 'needs_more_information')",
+            name="ck_ctrl_assess_review_status",
         ),
         CheckConstraint(
             "confidence_score IS NULL OR (confidence_score >= 0.0 AND confidence_score <= 1.0)",
             name="ck_ctrl_assess_confidence",
         ),
         Index("ix_ctrl_assess_org_id", "organization_id"),
+        Index("ix_ctrl_assess_audit_id", "audit_id"),
+        Index("ix_ctrl_assess_control_id", "control_id"),
+        Index("ix_ctrl_assess_defence_run", "defence_analysis_run_id"),
         Index("ix_ctrl_assess_run_id", "audit_run_id"),
         Index("ix_ctrl_assess_status", "status"),
+        Index("ix_ctrl_assess_review_status", "review_status"),
     )
 
     def __repr__(self) -> str:
-        return f"<ControlAssessment id={self.id} req_id={self.requirement_id} status={self.status}>"
+        return f"<ControlAssessment id={self.id} control={self.control_id} status={self.status}>"
