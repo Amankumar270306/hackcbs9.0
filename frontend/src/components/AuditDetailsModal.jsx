@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, 
   ShieldAlert, 
@@ -16,6 +16,8 @@ import {
   Scale,
   FileCheck
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { auditApi } from '../api/client';
 import AuditDocumentsSection from './AuditDocumentsSection';
 import AuditRequirementsTab from './AuditRequirementsTab';
 import ThreatAnalysisSection from './ThreatAnalysisSection';
@@ -26,8 +28,48 @@ import ReportGeneratorSection from './ReportGeneratorSection';
 export default function AuditDetailsModal({ audit, onClose }) {
   if (!audit) return null;
 
+  const { activeOrg } = useAuth();
+  const orgId = activeOrg?.organization_id || activeOrg?.id;
+
   const [activeTab, setActiveTab] = useState('documents'); // default to 'documents' to showcase Milestone 3
   const [docCount, setDocCount] = useState(audit.document_count || 0);
+
+  // Normalize audit ID to always use the real database UUID
+  const initialRealId = audit.rawId || (audit.id && !audit.id.startsWith('AUD-') ? audit.id : null);
+  const [realId, setRealId] = useState(initialRealId);
+
+  useEffect(() => {
+    if (audit.rawId) {
+      setRealId(audit.rawId);
+    } else if (audit.id && !audit.id.startsWith('AUD-')) {
+      setRealId(audit.id);
+    } else if (orgId && audit.id && audit.id.startsWith('AUD-')) {
+      auditApi.list(orgId).then((res) => {
+        const items = res.items || [];
+        const prefix = audit.id.replace('AUD-2024-', '').toLowerCase();
+        const match = items.find(
+          (a) =>
+            a.id.toLowerCase().startsWith(prefix) ||
+            a.name === (audit.targetName || audit.name)
+        );
+        if (match) {
+          setRealId(match.id);
+        }
+      }).catch(console.warn);
+    }
+  }, [audit, orgId]);
+
+  const effectiveId = realId || audit.rawId || audit.id;
+  const displayId = audit.displayId || (audit.id && audit.id.startsWith('AUD-') ? audit.id : (effectiveId ? `AUD-2024-${effectiveId.slice(0, 4).toUpperCase()}` : audit.id));
+
+  const normalizedAudit = {
+    ...audit,
+    id: effectiveId,
+    rawId: effectiveId,
+    displayId: displayId,
+    organization_id: audit.organization_id || orgId,
+    organizationId: audit.organization_id || orgId,
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
@@ -36,7 +78,7 @@ export default function AuditDetailsModal({ audit, onClose }) {
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 bg-white z-10 shrink-0">
           <div className="flex items-center space-x-3">
             <span className="font-mono text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-md border border-blue-200">
-              {audit.id}
+              {displayId}
             </span>
             <div>
               <h3 className="text-sm font-bold text-slate-900">{audit.targetName || audit.name}</h3>
@@ -133,19 +175,19 @@ export default function AuditDetailsModal({ audit, onClose }) {
         <div className="p-6 overflow-y-auto space-y-5 text-xs flex-1">
           {activeTab === 'documents' ? (
             <AuditDocumentsSection
-              audit={audit}
+              audit={normalizedAudit}
               onDocumentCountChange={(cnt) => setDocCount(cnt)}
             />
           ) : activeTab === 'requirements' ? (
-            <AuditRequirementsTab audit={audit} />
+            <AuditRequirementsTab audit={normalizedAudit} />
           ) : activeTab === 'threats' ? (
-            <ThreatAnalysisSection audit={audit} />
+            <ThreatAnalysisSection audit={normalizedAudit} />
           ) : activeTab === 'defence' ? (
-            <DefenceAuditorSection audit={audit} />
+            <DefenceAuditorSection audit={normalizedAudit} />
           ) : activeTab === 'adjudicator' || activeTab === 'consensus' ? (
-            <AdjudicatorSection audit={audit} />
+            <AdjudicatorSection audit={normalizedAudit} />
           ) : (
-            <ReportGeneratorSection audit={audit} />
+            <ReportGeneratorSection audit={normalizedAudit} />
           )}
         </div>
 

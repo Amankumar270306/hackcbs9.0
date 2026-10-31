@@ -83,7 +83,7 @@ class AdjudicationReadinessResponse(BaseModel):
 
 
 class AdjudicationRunCreateRequest(BaseModel):
-    model_name: Optional[str] = "gemini-1.5-flash"
+    model_name: Optional[str] = None
 
 
 class AdjudicationRunResponse(BaseModel):

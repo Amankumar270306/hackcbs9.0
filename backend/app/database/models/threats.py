@@ -55,7 +55,7 @@ class ThreatAnalysisRun(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
 
     status: Mapped[str] = mapped_column(String(50), default="pending", nullable=False)
-    model_name: Mapped[str] = mapped_column(String(100), default="gemini-1.5-flash", nullable=False)
+    model_name: Mapped[str] = mapped_column(String(100), default="gemini-3.5-flash-lite", nullable=False)
     prompt_version: Mapped[str] = mapped_column(String(50), default="v1.0", nullable=False)
     input_document_ids: Mapped[List[str]] = mapped_column(JSONB, default=list, nullable=False)
     input_requirement_ids: Mapped[List[str]] = mapped_column(JSONB, default=list, nullable=False)

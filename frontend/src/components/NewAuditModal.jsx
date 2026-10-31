@@ -40,7 +40,9 @@ export default function NewAuditModal({ isOpen, onClose, onAuditCreated }) {
 
       onAuditCreated?.({
         ...audit,
-        id: `AUD-2024-${audit.id.slice(0, 4).toUpperCase()}`,
+        id: audit.id,
+        rawId: audit.id,
+        displayId: `AUD-2024-${audit.id.slice(0, 4).toUpperCase()}`,
         targetName: audit.name,
         targetSub: audit.application_name,
         framework: framework,

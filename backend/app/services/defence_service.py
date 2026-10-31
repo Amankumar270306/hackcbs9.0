@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
+from app.config import settings
 from app.database.models.assessments import ControlAssessment, Requirement, Threat
 from app.database.models.audits import Audit
 from app.database.models.defence import (
@@ -148,7 +149,7 @@ class DefenceService:
             organization_id=organization_id,
             audit_id=audit_id,
             status="pending",
-            model_name=model_name or "gemini-1.5-flash",
+            model_name=model_name or settings.GEMINI_MODEL,
             prompt_version="v1.0",
         )
         db.add(run)

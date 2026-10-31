@@ -58,6 +58,61 @@ class GeminiClient(BaseGeminiClient):
         self.timeout = timeout if timeout is not None else settings.GEMINI_TIMEOUT_SECONDS
         self.base_url = "https://generativelanguage.googleapis.com/v1beta/models"
 
+    @staticmethod
+    def _parse_json_robust(raw_text: str) -> Dict[str, Any]:
+        """Robustly parses JSON from LLM output, handling markdown fences, trailing commas, and partial truncations."""
+        cleaned = raw_text.strip()
+        if cleaned.startswith("```json"):
+            cleaned = cleaned[7:]
+        elif cleaned.startswith("```"):
+            cleaned = cleaned[3:]
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3]
+        cleaned = cleaned.strip()
+
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            pass
+
+        import re
+        no_trailing = re.sub(r",\s*([}\]])", r"\1", cleaned)
+        try:
+            return json.loads(no_trailing)
+        except json.JSONDecodeError:
+            pass
+
+        # Attempt to close open structures if cut off by token limit
+        stack = []
+        in_string = False
+        escape = False
+        for ch in no_trailing:
+            if ch == '"' and not escape:
+                in_string = not in_string
+            elif ch == "\\" and in_string:
+                escape = not escape
+                continue
+            elif not in_string:
+                if ch in "{[":
+                    stack.append("}" if ch == "{" else "]")
+                elif ch in "}]":
+                    if stack and stack[-1] == ch:
+                        stack.pop()
+            escape = False
+
+        if stack:
+            repaired = no_trailing
+            if in_string:
+                repaired += '"'
+            repaired = re.sub(r",\s*$", "", repaired)
+            repaired += "".join(reversed(stack))
+            try:
+                return json.loads(repaired)
+            except json.JSONDecodeError:
+                pass
+
+        return json.loads(cleaned)
+
     async def generate_structured(
         self,
         prompt: str,
@@ -115,18 +170,7 @@ class GeminiClient(BaseGeminiClient):
                         raise GeminiAPIError("Empty text parts in Gemini response candidate.")
 
                     raw_text = parts[0]["text"]
-                    try:
-                        return json.loads(raw_text)
-                    except json.JSONDecodeError as json_err:
-                        # Attempt markdown codeblock strip if present
-                        cleaned = raw_text.strip()
-                        if cleaned.startswith("```json"):
-                            cleaned = cleaned[7:]
-                        elif cleaned.startswith("```"):
-                            cleaned = cleaned[3:]
-                        if cleaned.endswith("```"):
-                            cleaned = cleaned[:-3]
-                        return json.loads(cleaned.strip())
+                    return self._parse_json_robust(raw_text)
 
                 elif response.status_code in (429, 503) and attempt < max_retries:
                     logger.warning(

@@ -203,7 +203,7 @@ class ThreatAnalysisTriggerRequest(BaseModel):
     """Request to initiate a new threat analysis run."""
     document_ids: Optional[List[UUID]] = None
     requirement_ids: Optional[List[UUID]] = None
-    model_name: Optional[str] = "gemini-1.5-flash"
+    model_name: Optional[str] = None
     run_in_background: Optional[bool] = False
 
 

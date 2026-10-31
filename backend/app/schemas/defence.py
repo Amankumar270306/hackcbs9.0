@@ -82,7 +82,7 @@ class DefenceAuditorOutput(BaseModel):
 # ---------------------------------------------------------------------------
 
 class DefenceAnalysisRunCreateRequest(BaseModel):
-    model_name: Optional[str] = "gemini-1.5-flash"
+    model_name: Optional[str] = None
 
 
 class DefenceAnalysisRunResponse(BaseModel):

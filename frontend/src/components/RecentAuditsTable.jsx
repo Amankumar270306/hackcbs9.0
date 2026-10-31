@@ -117,8 +117,11 @@ export default function RecentAuditsTable({ onSelectAudit, onOpenNewAudit }) {
         });
 
         return {
-          id: `AUD-2024-${a.id.slice(0, 4).toUpperCase()}`,
+          id: a.id,
           rawId: a.id,
+          organization_id: a.organization_id,
+          organizationId: a.organization_id,
+          displayId: `AUD-2024-${a.id.slice(0, 4).toUpperCase()}`,
           targetName: a.name || a.title,
           targetSub: a.application_name || 'Production VPC',
           framework: a.description?.includes('PCI') ? 'PCI-DSS v4.0' : 'SOC 2 Type II',
@@ -133,11 +136,6 @@ export default function RecentAuditsTable({ onSelectAudit, onOpenNewAudit }) {
           date: formattedDate,
         };
       });
-    }
-
-    // If activeOrg is default demo workspace and no audits in DB yet, show fallback
-    if (!activeOrg || activeOrg.organization_slug?.includes('acme') || activeOrg.organization_name?.includes('Acme')) {
-      return fallbackAudits;
     }
 
     return [];
@@ -236,7 +234,7 @@ export default function RecentAuditsTable({ onSelectAudit, onOpenNewAudit }) {
                 <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
                   {/* Audit ID */}
                   <td className="py-3.5 pl-5 pr-3 font-mono font-medium text-blue-600">
-                    {item.id}
+                    {item.displayId || item.id}
                   </td>
 
                   {/* Target System */}

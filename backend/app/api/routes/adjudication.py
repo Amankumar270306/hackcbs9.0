@@ -36,7 +36,7 @@ adjudication_router = APIRouter(
 
 
 class AdjudicationRunTriggerRequest(BaseModel):
-    model_name: Optional[str] = Field("gemini-1.5-flash", description="Gemini model name")
+    model_name: Optional[str] = Field(None, description="Gemini model name")
     run_in_background: bool = Field(False, description="Whether to execute asynchronously")
 
 
@@ -101,7 +101,7 @@ async def trigger_adjudication_run(
     membership: OrganizationMember = Depends(require_roles(["owner", "admin", "auditor"])),
 ):
     """Dispatches cross-agent reconciliation and consensus adjudication."""
-    model_name = req.model_name if req and req.model_name else "gemini-1.5-flash"
+    model_name = req.model_name if req and req.model_name else None
     run_in_bg = req.run_in_background if req else False
 
     try:

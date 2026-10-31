@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
+from app.config import settings
 from app.database.models.adjudication import (
     AdjudicationAuditHistory,
     AdjudicationContradiction,
@@ -162,7 +163,7 @@ class AdjudicationService:
         db: Session,
         organization_id: UUID,
         audit_id: UUID,
-        model_name: str = "gemini-1.5-flash",
+        model_name: Optional[str] = None,
     ) -> AdjudicationRunResponse:
         """Creates an AdjudicationRun record."""
         audit = db.execute(
@@ -175,7 +176,7 @@ class AdjudicationService:
             organization_id=organization_id,
             audit_id=audit_id,
             status="pending",
-            model_name=model_name,
+            model_name=model_name or settings.GEMINI_MODEL,
             prompt_version="v1.0",
             input_source_snapshot={},
         )

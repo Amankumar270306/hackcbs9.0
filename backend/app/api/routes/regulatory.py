@@ -19,6 +19,7 @@ from fastapi import (
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.core.dependencies import get_current_membership, get_current_user, require_roles
 from app.database.connection import SessionLocal, get_db
 from app.database.models.identity import OrganizationMember, User
@@ -295,7 +296,7 @@ def trigger_legal_analyst_extraction(
     job = RegulatoryExtractionJob(
         regulatory_document_id=document_id,
         status="running",
-        model_name="gemini-1.5-flash",
+        model_name=settings.GEMINI_MODEL,
         prompt_version="v1.0",
         chunks_total=doc.chunk_count,
         chunks_processed=0,

@@ -477,7 +477,7 @@ class AdjudicatorPipeline:
                         ) else "discovered_control",
                         source_entity_id=s_ent_id,
                         source_role=s_item.source_role if s_item.source_role in ("supporting", "contradictory", "contextual", "informational") else "supporting",
-                        citation_reference=s_item.filename or (chunk_obj.audit_document.filename if chunk_obj and chunk_obj.audit_document else "document"),
+                        citation_reference=s_item.filename or (getattr(chunk_obj.document, "original_filename", getattr(chunk_obj.document, "file_name", "document")) if chunk_obj and hasattr(chunk_obj, "document") and chunk_obj.document else "document"),
                         exact_excerpt=s_item.exact_excerpt,
                         chunk_id=chunk_obj.id if chunk_obj else None,
                         document_id=chunk_obj.audit_document_id if chunk_obj else None,

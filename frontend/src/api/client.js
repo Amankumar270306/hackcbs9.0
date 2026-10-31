@@ -110,7 +110,16 @@ async function handleResponse(response) {
   const data = text ? JSON.parse(text) : {};
 
   if (!response.ok) {
-    const errorMsg = data.detail || (Array.isArray(data.detail) ? data.detail.map(d => d.msg).join(', ') : 'An unexpected error occurred');
+    let errorMsg = 'An unexpected error occurred';
+    if (typeof data.detail === 'string') {
+      errorMsg = data.detail;
+    } else if (Array.isArray(data.detail)) {
+      errorMsg = data.detail.map((d) => (typeof d === 'string' ? d : d.msg || JSON.stringify(d))).join(', ');
+    } else if (data.detail && typeof data.detail === 'object') {
+      errorMsg = data.detail.msg || JSON.stringify(data.detail);
+    } else if (data.message && typeof data.message === 'string') {
+      errorMsg = data.message;
+    }
     const err = new Error(errorMsg);
     err.status = response.status;
     err.data = data;

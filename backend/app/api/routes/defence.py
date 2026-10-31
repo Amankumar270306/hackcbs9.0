@@ -40,7 +40,7 @@ defence_router = APIRouter(
 
 
 class DefenceRunTriggerRequest(BaseModel):
-    model_name: Optional[str] = Field("gemini-1.5-flash", description="Gemini model name")
+    model_name: Optional[str] = Field(None, description="Gemini model name")
     run_in_background: bool = Field(False, description="Whether to execute asynchronously")
 
 

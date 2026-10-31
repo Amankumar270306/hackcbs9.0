@@ -34,10 +34,10 @@ class Settings(BaseSettings):
 
     # LLM & Workflow Services
     GEMINI_API_KEY: Optional[str] = None
-    GEMINI_MODEL: str = "gemini-3.5-flash"
+    GEMINI_MODEL: str = "gemini-3.5-flash-lite"
     GEMINI_TEMPERATURE: float = 0.1
-    GEMINI_MAX_OUTPUT_TOKENS: int = 4096
-    GEMINI_TIMEOUT_SECONDS: int = 60
+    GEMINI_MAX_OUTPUT_TOKENS: int = 16384
+    GEMINI_TIMEOUT_SECONDS: int = 180
     N8N_WEBHOOK_URL: Optional[str] = None
     N8N_ENCRYPTION_KEY: Optional[str] = None
 

@@ -38,6 +38,7 @@ from app.schemas.threats import (
     ThreatRequirementMappingResponse,
     ThreatResponse,
 )
+from app.config import settings
 from app.services.adversarial_strategist import (
     AdversarialStrategistService,
     compute_risk_and_severity,
@@ -165,7 +166,7 @@ class ThreatAnalysisService:
             organization_id=organization_id,
             audit_id=audit.id,
             status="pending",
-            model_name=req.model_name or "gemini-1.5-flash",
+            model_name=req.model_name or settings.GEMINI_MODEL,
             prompt_version="v1.0",
             input_document_ids=doc_ids,
             input_requirement_ids=req_ids,

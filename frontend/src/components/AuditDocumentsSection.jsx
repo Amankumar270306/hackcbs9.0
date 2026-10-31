@@ -24,6 +24,9 @@ const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB
 
 export default function AuditDocumentsSection({ audit, onDocumentCountChange }) {
   const { activeOrg } = useAuth();
+  const orgId = activeOrg?.organization_id || activeOrg?.id;
+  const auditId = audit?.rawId || (audit?.id && !audit.id.startsWith('AUD-') ? audit.id : audit?.rawId);
+
   const fileInputRef = useRef(null);
 
   const [documents, setDocuments] = useState([]);
@@ -46,10 +49,10 @@ export default function AuditDocumentsSection({ audit, onDocumentCountChange }) 
   const [deletingId, setDeletingId] = useState(null);
 
   const fetchDocuments = (silent = false) => {
-    if (!activeOrg?.organization_id || !audit?.id) return;
+    if (!orgId || !auditId) return;
     if (!silent) setLoading(true);
 
-    documentApi.list(activeOrg.organization_id, audit.id, {
+    documentApi.list(orgId, auditId, {
       search: search.trim() || undefined,
       status: statusFilter !== 'All' ? statusFilter : undefined,
     })
@@ -69,7 +72,7 @@ export default function AuditDocumentsSection({ audit, onDocumentCountChange }) 
 
   useEffect(() => {
     fetchDocuments();
-  }, [activeOrg?.organization_id, audit?.id, search, statusFilter]);
+  }, [orgId, auditId, search, statusFilter]);
 
   // Auto-refresh poll every 4 seconds if any document is processing or queued
   useEffect(() => {
@@ -81,7 +84,7 @@ export default function AuditDocumentsSection({ audit, onDocumentCountChange }) 
     }, 4000);
 
     return () => clearInterval(timer);
-  }, [documents, activeOrg?.organization_id, audit?.id]);
+  }, [documents, orgId, auditId]);
 
   const handleFileValidation = (file) => {
     if (!file) return false;
@@ -105,17 +108,23 @@ export default function AuditDocumentsSection({ audit, onDocumentCountChange }) 
   const uploadFile = async (file) => {
     if (!handleFileValidation(file)) return;
 
+    if (!orgId || !auditId) {
+      setUploadError('Audit ID could not be resolved. Please close and re-open the audit.');
+      return;
+    }
+
     setUploading(true);
     setUploadError(null);
     setUploadSuccess(null);
 
     try {
-      const res = await documentApi.upload(activeOrg.organization_id, audit.id, file);
+      const res = await documentApi.upload(orgId, auditId, file);
       setUploadSuccess(`"${file.name}" uploaded successfully. Extraction and chunking initiated.`);
       fetchDocuments(true);
       setTimeout(() => setUploadSuccess(null), 5000);
     } catch (err) {
-      setUploadError(err.message || 'Document upload failed');
+      const msg = typeof err === 'string' ? err : (err.message || 'Document upload failed');
+      setUploadError(msg);
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -143,10 +152,11 @@ export default function AuditDocumentsSection({ audit, onDocumentCountChange }) 
   const handleRetry = async (docId, e) => {
     e.stopPropagation();
     try {
-      await documentApi.retry(activeOrg.organization_id, audit.id, docId);
+      await documentApi.retry(orgId, auditId, docId);
       fetchDocuments(true);
     } catch (err) {
-      alert(`Retry failed: ${err.message}`);
+      const msg = typeof err === 'string' ? err : (err.message || 'Failed to retry processing');
+      setUploadError(msg);
     }
   };
 
@@ -158,10 +168,11 @@ export default function AuditDocumentsSection({ audit, onDocumentCountChange }) 
 
     try {
       setDeletingId(docId);
-      await documentApi.delete(activeOrg.organization_id, audit.id, docId);
+      await documentApi.delete(orgId, auditId, docId);
       fetchDocuments(true);
     } catch (err) {
-      alert(`Delete failed: ${err.message}`);
+      const msg = typeof err === 'string' ? err : (err.message || 'Failed to delete document');
+      setUploadError(msg);
     } finally {
       setDeletingId(null);
     }
@@ -291,7 +302,7 @@ export default function AuditDocumentsSection({ audit, onDocumentCountChange }) 
       {uploadError && (
         <div className="flex items-center space-x-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 animate-in fade-in">
           <AlertCircle className="h-4 w-4 shrink-0" />
-          <span className="flex-1">{uploadError}</span>
+          <span className="flex-1">{typeof uploadError === 'string' ? uploadError : (uploadError?.message || JSON.stringify(uploadError))}</span>
           <button onClick={() => setUploadError(null)} className="text-rose-500 hover:text-rose-700 font-bold ml-2">×</button>
         </div>
       )}
@@ -433,7 +444,7 @@ export default function AuditDocumentsSection({ audit, onDocumentCountChange }) 
 
                         {/* Download */}
                         <button
-                          onClick={() => documentApi.download(activeOrg.organization_id, audit.id, doc.id, doc.original_filename)}
+                          onClick={() => documentApi.download(orgId, auditId, doc.id, doc.original_filename)}
                           title="Download original file"
                           className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
                         >
@@ -478,7 +489,7 @@ export default function AuditDocumentsSection({ audit, onDocumentCountChange }) 
       {previewDoc && (
         <DocumentPreviewModal
           document={previewDoc}
-          auditId={audit.id}
+          auditId={auditId}
           onClose={() => setPreviewDoc(null)}
         />
       )}

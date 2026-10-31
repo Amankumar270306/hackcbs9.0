@@ -19,15 +19,9 @@ import {
 export default function Sidebar({ activeNav, setActiveNav, onOpenNewAudit }) {
   const { activeOrg } = useAuth();
   const navItems = [
-    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-    { id: 'regulatory', label: 'Regulatory KB', icon: BookOpen, badge: 'Agent', badgeColor: 'bg-emerald-100 text-emerald-700 font-semibold' },
+    { id: 'overview', label: 'Assessment & Reports', icon: LayoutDashboard },
+    { id: 'regulatory', label: 'Regulatory KB', icon: BookOpen },
     { id: 'new-audit', label: 'New Audit', icon: PlusCircle, action: onOpenNewAudit },
-    { id: 'audit-execution', label: 'Audit Execution', icon: PlayCircle, badge: 'Live', badgeColor: 'bg-blue-100 text-blue-700' },
-    { id: 'findings', label: 'Findings', icon: ShieldAlert, badge: '14 New', badgeColor: 'bg-rose-100 text-rose-700 font-semibold' },
-    { id: 'adjudicator-ai', label: 'Adjudicator AI', icon: Sparkles },
-    { id: 'audit-reports', label: 'Audit Reports', icon: FileText },
-    { id: 'documents', label: 'Documents', icon: FolderLock },
-    { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
   return (
@@ -88,40 +82,29 @@ export default function Sidebar({ activeNav, setActiveNav, onOpenNewAudit }) {
         </nav>
       </div>
 
-      {/* Bottom Section: Security Posture Widget & Links */}
+      {/* Bottom Section: Connected System Status */}
       <div className="space-y-3 pt-4 border-t border-slate-100">
-        {/* Security Posture Widget */}
         <div className="rounded-xl border border-slate-200/80 bg-slate-50/90 p-3">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-              Security Posture
+              System Engine
             </span>
-            <span className="text-xs font-extrabold text-emerald-600">
-              94.2%
+            <span className="flex items-center space-x-1 text-xs font-semibold text-emerald-600">
+              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Online</span>
             </span>
           </div>
 
-          {/* Progress bar */}
-          <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-500"
-              style={{ width: '94.2%' }}
-            />
-          </div>
-
-          <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500">
-            <span className="font-medium text-slate-600">SOC2 • ISO27001 Ready</span>
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+          <div className="mt-2 text-[11px] text-slate-600 space-y-0.5 font-mono">
+            <div>DB: YugabyteDB (YSQL)</div>
+            <div>AI: Gemini 3.5 Flash</div>
           </div>
         </div>
 
-        {/* Footer meta links */}
+        {/* Footer info */}
         <div className="flex items-center justify-between px-1 text-[10px] text-slate-400 font-medium">
-          <a href="#docs" className="hover:text-slate-700 transition-colors">API Docs</a>
-          <span>•</span>
-          <a href="#support" className="hover:text-slate-700 transition-colors">Support</a>
-          <span>•</span>
-          <a href="#security-id" className="hover:text-slate-700 transition-colors">Security ID</a>
+          <span>Compliance Sentinel</span>
+          <span>v4.0 Enterprise</span>
         </div>
       </div>
     </aside>

@@ -66,16 +66,17 @@ services:
       - DATABASE_USER=yugabyte
       - DATABASE_PASSWORD=
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
-      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.5-flash}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.5-flash-lite}
       - GEMINI_TEMPERATURE=${GEMINI_TEMPERATURE:-0.1}
-      - GEMINI_MAX_OUTPUT_TOKENS=${GEMINI_MAX_OUTPUT_TOKENS:-8192}
-      - GEMINI_TIMEOUT_SECONDS=${GEMINI_TIMEOUT_SECONDS:-60}
+      - GEMINI_MAX_OUTPUT_TOKENS=${GEMINI_MAX_OUTPUT_TOKENS:-16384}
+      - GEMINI_TIMEOUT_SECONDS=${GEMINI_TIMEOUT_SECONDS:-180}
       - N8N_WEBHOOK_URL=http://n8n:5678/
       - STORAGE_LOCAL_PATH=/data/storage
       - MAX_UPLOAD_SIZE_BYTES=${MAX_UPLOAD_SIZE_BYTES:-26214400}
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
     volumes:
-      - storage_data:/data/storage
+      - ./backend:/app
+      - /tmp/compliance_sentinel/storage:/data/storage
     networks:
       - compliance_sentinel_net
     healthcheck:
@@ -96,6 +97,8 @@ services:
     restart: unless-stopped
     ports:
       - "3000:80"
+    volumes:
+      - ./frontend/dist:/usr/share/nginx/html:ro
     depends_on:
       backend:
         condition: service_healthy
