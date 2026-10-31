@@ -47,7 +47,10 @@ export default function AuditDetailsModal({ audit, onClose }) {
             </div>
             <div>
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Risk Score</div>
-              <div className="mt-1 font-bold text-rose-600 text-xs">{audit.riskScore}/100 ({audit.riskLevel})</div>
+              <div className="mt-1 font-bold text-rose-600 text-xs">
+                {audit.riskScore !== null && audit.riskScore !== undefined ? `${audit.riskScore}/100` : 'Evaluating'}{' '}
+                {audit.riskLevel ? `(${audit.riskLevel})` : ''}
+              </div>
             </div>
             <div>
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Status</div>

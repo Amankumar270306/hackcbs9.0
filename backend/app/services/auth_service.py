@@ -278,3 +278,4 @@ class AuthService:
         if record and record.revoked_at is None:
             record.revoked_at = datetime.now(timezone.utc)
             db.commit()
+

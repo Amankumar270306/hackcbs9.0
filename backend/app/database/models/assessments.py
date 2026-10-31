@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 import uuid
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 from sqlalchemy import (
     CheckConstraint,
     ForeignKeyConstraint,
@@ -13,6 +15,9 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+
+if TYPE_CHECKING:
+    from app.database.models.audits import AuditRun
 
 
 class Requirement(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -29,8 +34,8 @@ class Requirement(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
     # Relationships
-    audit_run: Mapped["AuditRun"] = relationship("AuditRun", back_populates="requirements")
-    control_assessments: Mapped[List["ControlAssessment"]] = relationship(
+    audit_run: Mapped[AuditRun] = relationship("AuditRun", back_populates="requirements")
+    control_assessments: Mapped[List[ControlAssessment]] = relationship(
         "ControlAssessment",
         back_populates="requirement",
         cascade="all, delete-orphan",
@@ -68,8 +73,8 @@ class Threat(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     likelihood: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
     # Relationships
-    audit_run: Mapped["AuditRun"] = relationship("AuditRun", back_populates="threats")
-    control_assessments: Mapped[List["ControlAssessment"]] = relationship(
+    audit_run: Mapped[AuditRun] = relationship("AuditRun", back_populates="threats")
+    control_assessments: Mapped[List[ControlAssessment]] = relationship(
         "ControlAssessment",
         back_populates="threat",
         overlaps="requirement,control_assessments",
@@ -111,11 +116,11 @@ class ControlAssessment(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     status: Mapped[str] = mapped_column(String(50), nullable=False)
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
-    confidence_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 2), nullable=True)
+    confidence_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 2, asdecimal=False), nullable=True)
 
     # Relationships
-    requirement: Mapped["Requirement"] = relationship("Requirement", back_populates="control_assessments")
-    threat: Mapped[Optional["Threat"]] = relationship(
+    requirement: Mapped[Requirement] = relationship("Requirement", back_populates="control_assessments")
+    threat: Mapped[Optional[Threat]] = relationship(
         "Threat",
         back_populates="control_assessments",
         overlaps="requirement,control_assessments",

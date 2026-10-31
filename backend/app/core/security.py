@@ -97,3 +97,4 @@ def generate_refresh_token(expires_days: Optional[int] = None) -> Tuple[str, str
     expires_at = datetime.now(timezone.utc) + timedelta(days=expires_days)
 
     return raw_token, token_hash, jti, expires_at
+

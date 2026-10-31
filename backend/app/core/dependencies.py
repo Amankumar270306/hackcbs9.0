@@ -87,3 +87,4 @@ def require_roles(allowed_roles: List[str]) -> Callable:
         return membership
 
     return role_checker
+

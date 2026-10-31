@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 import uuid
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 from sqlalchemy import (
     CheckConstraint,
     ForeignKeyConstraint,
@@ -12,6 +14,9 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+
+if TYPE_CHECKING:
+    from app.database.models.audits import AuditRun
 
 
 class Report(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -29,7 +34,7 @@ class Report(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     report_metadata: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
 
     # Relationships
-    audit_run: Mapped["AuditRun"] = relationship("AuditRun", back_populates="reports")
+    audit_run: Mapped[AuditRun] = relationship("AuditRun", back_populates="reports")
 
     __table_args__ = (
         ForeignKeyConstraint(
@@ -55,4 +60,3 @@ class Report(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     def __repr__(self) -> str:
         return f"<Report id={self.id} title={self.title} version={self.version} format={self.format}>"
-

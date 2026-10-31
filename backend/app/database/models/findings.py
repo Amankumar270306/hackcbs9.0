@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 from datetime import datetime, timezone
 import uuid
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
@@ -17,6 +19,11 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
+if TYPE_CHECKING:
+    from app.database.models.audits import AuditRun
+    from app.database.models.assessments import Requirement, Threat
+    from app.database.models.documents import AuditDocument, DocumentChunk
+
 
 class Finding(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "findings"
@@ -30,21 +37,21 @@ class Finding(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     severity: Mapped[str] = mapped_column(String(50), nullable=False)
     evidence_state: Mapped[str] = mapped_column(String(50), nullable=False)
     remediation_guidance: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    cvss_score: Mapped[Optional[float]] = mapped_column(Numeric(3, 1), nullable=True)
+    cvss_score: Mapped[Optional[float]] = mapped_column(Numeric(3, 1, asdecimal=False), nullable=True)
 
     # Relationships
-    audit_run: Mapped["AuditRun"] = relationship("AuditRun", back_populates="findings")
-    evidence_references: Mapped[List["EvidenceReference"]] = relationship(
+    audit_run: Mapped[AuditRun] = relationship("AuditRun", back_populates="findings")
+    evidence_references: Mapped[List[EvidenceReference]] = relationship(
         "EvidenceReference",
         back_populates="finding",
         cascade="all, delete-orphan",
     )
-    finding_requirements: Mapped[List["FindingRequirement"]] = relationship(
+    finding_requirements: Mapped[List[FindingRequirement]] = relationship(
         "FindingRequirement",
         back_populates="finding",
         cascade="all, delete-orphan",
     )
-    finding_threats: Mapped[List["FindingThreat"]] = relationship(
+    finding_threats: Mapped[List[FindingThreat]] = relationship(
         "FindingThreat",
         back_populates="finding",
         cascade="all, delete-orphan",
@@ -102,8 +109,8 @@ class EvidenceReference(Base, UUIDPrimaryKeyMixin):
     )
 
     # Relationships
-    finding: Mapped["Finding"] = relationship("Finding", back_populates="evidence_references")
-    document: Mapped["AuditDocument"] = relationship("AuditDocument", overlaps="evidence_references,finding")
+    finding: Mapped[Finding] = relationship("Finding", back_populates="evidence_references")
+    document: Mapped[AuditDocument] = relationship("AuditDocument", overlaps="evidence_references,finding")
 
     __table_args__ = (
         ForeignKeyConstraint(
@@ -152,8 +159,8 @@ class FindingRequirement(Base, UUIDPrimaryKeyMixin):
     )
 
     # Relationships
-    finding: Mapped["Finding"] = relationship("Finding", back_populates="finding_requirements")
-    requirement: Mapped["Requirement"] = relationship("Requirement", overlaps="finding,finding_requirements")
+    finding: Mapped[Finding] = relationship("Finding", back_populates="finding_requirements")
+    requirement: Mapped[Requirement] = relationship("Requirement", overlaps="finding,finding_requirements")
 
     __table_args__ = (
         ForeignKeyConstraint(
@@ -193,8 +200,8 @@ class FindingThreat(Base, UUIDPrimaryKeyMixin):
     )
 
     # Relationships
-    finding: Mapped["Finding"] = relationship("Finding", back_populates="finding_threats")
-    threat: Mapped["Threat"] = relationship("Threat", overlaps="finding,finding_threats")
+    finding: Mapped[Finding] = relationship("Finding", back_populates="finding_threats")
+    threat: Mapped[Threat] = relationship("Threat", overlaps="finding,finding_threats")
 
     __table_args__ = (
         ForeignKeyConstraint(

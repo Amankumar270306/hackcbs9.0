@@ -256,3 +256,4 @@ def test_cross_tenant_isolation(client: TestClient):
         headers=headers_b,
     )
     assert unauth_run_res.status_code == 404
+

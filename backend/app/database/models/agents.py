@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 from datetime import datetime, timezone
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
@@ -14,6 +16,9 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+
+if TYPE_CHECKING:
+    from app.database.models.audits import AuditRun
 
 
 class AgentRun(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -30,14 +35,14 @@ class AgentRun(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Relationships
-    audit_run: Mapped["AuditRun"] = relationship("AuditRun", back_populates="agent_runs")
-    events: Mapped[List["AgentEvent"]] = relationship(
+    audit_run: Mapped[AuditRun] = relationship("AuditRun", back_populates="agent_runs")
+    events: Mapped[List[AgentEvent]] = relationship(
         "AgentEvent",
         back_populates="agent_run",
         cascade="all, delete-orphan",
         order_by="AgentEvent.created_at.asc()",
     )
-    outputs: Mapped[List["AgentOutput"]] = relationship(
+    outputs: Mapped[List[AgentOutput]] = relationship(
         "AgentOutput",
         back_populates="agent_run",
         cascade="all, delete-orphan",
@@ -86,7 +91,7 @@ class AgentEvent(Base, UUIDPrimaryKeyMixin):
     )
 
     # Relationships
-    agent_run: Mapped["AgentRun"] = relationship("AgentRun", back_populates="events")
+    agent_run: Mapped[AgentRun] = relationship("AgentRun", back_populates="events")
 
     __table_args__ = (
         ForeignKeyConstraint(
@@ -122,7 +127,7 @@ class AgentOutput(Base, UUIDPrimaryKeyMixin):
     )
 
     # Relationships
-    agent_run: Mapped["AgentRun"] = relationship("AgentRun", back_populates="outputs")
+    agent_run: Mapped[AgentRun] = relationship("AgentRun", back_populates="outputs")
 
     __table_args__ = (
         ForeignKeyConstraint(
@@ -139,4 +144,3 @@ class AgentOutput(Base, UUIDPrimaryKeyMixin):
 
     def __repr__(self) -> str:
         return f"<AgentOutput id={self.id} type={self.output_type}>"
-

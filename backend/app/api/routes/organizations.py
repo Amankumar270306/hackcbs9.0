@@ -124,3 +124,4 @@ def remove_member(
         actor_id=current_user.id,
         actor_role=membership.role,
     )
+

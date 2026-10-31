@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 from datetime import datetime
 import uuid
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 from sqlalchemy import (
     DateTime,
     ForeignKey,
@@ -12,6 +14,9 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+
+if TYPE_CHECKING:
+    from app.database.models.identity import User
 
 
 class RefreshToken(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -30,7 +35,7 @@ class RefreshToken(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     ip_address: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
     # Relationships
-    user: Mapped["User"] = relationship("User", back_populates="refresh_tokens")
+    user: Mapped[User] = relationship("User", back_populates="refresh_tokens")
 
     __table_args__ = (
         Index("ix_refresh_tokens_user_id", "user_id"),

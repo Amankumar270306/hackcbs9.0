@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 from datetime import datetime, timezone
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
@@ -16,6 +18,9 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+
+if TYPE_CHECKING:
+    from app.database.models.audits import AuditRun
 
 
 class AuditDocument(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -34,8 +39,8 @@ class AuditDocument(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     doc_metadata: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
 
     # Relationships
-    audit_run: Mapped["AuditRun"] = relationship("AuditRun", back_populates="documents")
-    chunks: Mapped[List["DocumentChunk"]] = relationship(
+    audit_run: Mapped[AuditRun] = relationship("AuditRun", back_populates="documents")
+    chunks: Mapped[List[DocumentChunk]] = relationship(
         "DocumentChunk",
         back_populates="document",
         cascade="all, delete-orphan",
@@ -83,7 +88,7 @@ class DocumentChunk(Base, UUIDPrimaryKeyMixin):
     )
 
     # Relationships
-    document: Mapped["AuditDocument"] = relationship("AuditDocument", back_populates="chunks")
+    document: Mapped[AuditDocument] = relationship("AuditDocument", back_populates="chunks")
 
     __table_args__ = (
         ForeignKeyConstraint(
@@ -102,4 +107,3 @@ class DocumentChunk(Base, UUIDPrimaryKeyMixin):
 
     def __repr__(self) -> str:
         return f"<DocumentChunk id={self.id} doc_id={self.audit_document_id} chunk_idx={self.chunk_index}>"
-

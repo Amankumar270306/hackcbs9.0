@@ -314,3 +314,4 @@ class OrganizationService:
 
         db.delete(membership)
         db.commit()
+

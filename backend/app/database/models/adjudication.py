@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 from datetime import datetime, timezone
 import uuid
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
@@ -16,6 +18,11 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
+if TYPE_CHECKING:
+    from app.database.models.identity import User
+    from app.database.models.findings import Finding
+    from app.database.models.documents import AuditDocument
+
 
 class AdjudicationQuestion(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "adjudication_questions"
@@ -29,7 +36,7 @@ class AdjudicationQuestion(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     status: Mapped[str] = mapped_column(String(50), default="pending", nullable=False)
 
     # Relationships
-    answers: Mapped[List["AdjudicationAnswer"]] = relationship(
+    answers: Mapped[List[AdjudicationAnswer]] = relationship(
         "AdjudicationAnswer",
         back_populates="question",
         cascade="all, delete-orphan",
@@ -84,8 +91,8 @@ class AdjudicationAnswer(Base, UUIDPrimaryKeyMixin):
     )
 
     # Relationships
-    question: Mapped["AdjudicationQuestion"] = relationship("AdjudicationQuestion", back_populates="answers")
-    user: Mapped["User"] = relationship("User")
+    question: Mapped[AdjudicationQuestion] = relationship("AdjudicationQuestion", back_populates="answers")
+    user: Mapped[User] = relationship("User")
 
     __table_args__ = (
         ForeignKeyConstraint(
@@ -107,5 +114,4 @@ class AdjudicationAnswer(Base, UUIDPrimaryKeyMixin):
     )
 
     def __repr__(self) -> str:
-        return f"<AdjudicationAnswer id={self.id} question_id={self.question_id} user_id={self.user_id}>"
-
+        return f"<AdjudicationAnswer id={self.id} question_id={self.question_id}>"

@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 from datetime import datetime
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
@@ -17,6 +19,14 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+
+if TYPE_CHECKING:
+    from app.database.models.identity import Organization, User
+    from app.database.models.documents import AuditDocument
+    from app.database.models.assessments import Requirement, Threat
+    from app.database.models.findings import Finding
+    from app.database.models.agents import AgentRun
+    from app.database.models.reports import Report
 
 
 class Audit(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -41,9 +51,9 @@ class Audit(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
 
     # Relationships
-    organization: Mapped["Organization"] = relationship("Organization", back_populates="audits")
-    creator: Mapped[Optional["User"]] = relationship("User")
-    runs: Mapped[List["AuditRun"]] = relationship(
+    organization: Mapped[Organization] = relationship("Organization", back_populates="audits")
+    creator: Mapped[Optional[User]] = relationship("User")
+    runs: Mapped[List[AuditRun]] = relationship(
         "AuditRun",
         back_populates="audit",
         cascade="all, delete-orphan",
@@ -62,6 +72,20 @@ class Audit(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         Index("ix_audits_created_by", "created_by"),
     )
 
+    def __init__(self, **kwargs: Any) -> None:
+        # Seamlessly synchronize name <-> title and application_name <-> target_system
+        if "name" in kwargs and "title" not in kwargs:
+            kwargs["title"] = kwargs["name"]
+        elif "title" in kwargs and "name" not in kwargs:
+            kwargs["name"] = kwargs["title"]
+
+        if "application_name" in kwargs and "target_system" not in kwargs:
+            kwargs["target_system"] = kwargs["application_name"]
+        elif "target_system" in kwargs and "application_name" not in kwargs:
+            kwargs["application_name"] = kwargs["target_system"]
+
+        super().__init__(**kwargs)
+
     def __repr__(self) -> str:
         return f"<Audit id={self.id} org_id={self.organization_id} title={self.title} status={self.status}>"
 
@@ -73,7 +97,7 @@ class AuditRun(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     audit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     run_number: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(50), default="queued", nullable=False)
-    risk_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 2), nullable=True)
+    risk_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 2, asdecimal=False), nullable=True)
     summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     config: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     created_by: Mapped[Optional[uuid.UUID]] = mapped_column(
@@ -85,34 +109,34 @@ class AuditRun(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
-    audit: Mapped["Audit"] = relationship("Audit", back_populates="runs")
-    creator: Mapped[Optional["User"]] = relationship("User")
-    documents: Mapped[List["AuditDocument"]] = relationship(
+    audit: Mapped[Audit] = relationship("Audit", back_populates="runs")
+    creator: Mapped[Optional[User]] = relationship("User")
+    documents: Mapped[List[AuditDocument]] = relationship(
         "AuditDocument",
         back_populates="audit_run",
         cascade="all, delete-orphan",
     )
-    requirements: Mapped[List["Requirement"]] = relationship(
+    requirements: Mapped[List[Requirement]] = relationship(
         "Requirement",
         back_populates="audit_run",
         cascade="all, delete-orphan",
     )
-    threats: Mapped[List["Threat"]] = relationship(
+    threats: Mapped[List[Threat]] = relationship(
         "Threat",
         back_populates="audit_run",
         cascade="all, delete-orphan",
     )
-    findings: Mapped[List["Finding"]] = relationship(
+    findings: Mapped[List[Finding]] = relationship(
         "Finding",
         back_populates="audit_run",
         cascade="all, delete-orphan",
     )
-    agent_runs: Mapped[List["AgentRun"]] = relationship(
+    agent_runs: Mapped[List[AgentRun]] = relationship(
         "AgentRun",
         back_populates="audit_run",
         cascade="all, delete-orphan",
     )
-    reports: Mapped[List["Report"]] = relationship(
+    reports: Mapped[List[Report]] = relationship(
         "Report",
         back_populates="audit_run",
         cascade="all, delete-orphan",
@@ -142,6 +166,11 @@ class AuditRun(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         Index("ix_audit_runs_created_at", "created_at"),
         Index("ix_audit_runs_created_by", "created_by"),
     )
+
+    def __init__(self, **kwargs: Any) -> None:
+        if "config" not in kwargs or kwargs["config"] is None:
+            kwargs["config"] = {}
+        super().__init__(**kwargs)
 
     def __repr__(self) -> str:
         return f"<AuditRun id={self.id} audit_id={self.audit_id} run_number={self.run_number} status={self.status}>"

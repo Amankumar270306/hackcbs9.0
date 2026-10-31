@@ -184,3 +184,4 @@ def test_token_refresh_and_logout(client: TestClient):
         cookies={settings.COOKIE_NAME: new_refresh_cookie},
     )
     assert stale_res.status_code == 401
+

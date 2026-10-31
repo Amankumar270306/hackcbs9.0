@@ -199,3 +199,4 @@ def get_current_user_profile(
         is_active=current_user.is_active,
         organizations=org_details,
     )
+
