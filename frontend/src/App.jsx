@@ -1,4 +1,10 @@
 import React, { useState } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext';
+import ProtectedRoute from './components/ProtectedRoute';
+import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import OverviewHeader from './components/OverviewHeader';
@@ -15,7 +21,7 @@ import AuditDetailsModal from './components/AuditDetailsModal';
 import ExecutiveBriefingModal from './components/ExecutiveBriefingModal';
 import AgentDebuggerModal from './components/AgentDebuggerModal';
 
-export default function App() {
+function DashboardView() {
   const [activeNav, setActiveNav] = useState('overview');
   const [isNewAuditOpen, setIsNewAuditOpen] = useState(false);
   const [isBriefingOpen, setIsBriefingOpen] = useState(false);
@@ -23,7 +29,6 @@ export default function App() {
   const [selectedAudit, setSelectedAudit] = useState(null);
 
   const handleAuditCreated = (newAudit) => {
-    // Show toast or modal
     setSelectedAudit(newAudit);
   };
 
@@ -76,6 +81,7 @@ export default function App() {
           {/* Recent Audits Table */}
           <RecentAuditsTable
             onSelectAudit={(audit) => setSelectedAudit(audit)}
+            onOpenNewAudit={() => setIsNewAuditOpen(true)}
           />
 
           {/* Engine Footer Banner */}
@@ -110,3 +116,25 @@ export default function App() {
   );
 }
 
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <DashboardView />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </AuthProvider>
+    </BrowserRouter>
+  );
+}

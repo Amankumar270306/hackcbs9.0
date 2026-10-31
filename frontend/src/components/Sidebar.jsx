@@ -1,4 +1,5 @@
 import React from 'react';
+import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard,
   PlusCircle,
@@ -15,6 +16,7 @@ import {
 } from 'lucide-react';
 
 export default function Sidebar({ activeNav, setActiveNav, onOpenNewAudit }) {
+  const { activeOrg } = useAuth();
   const navItems = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
     { id: 'new-audit', label: 'New Audit', icon: PlusCircle, action: onOpenNewAudit },
@@ -36,7 +38,7 @@ export default function Sidebar({ activeNav, setActiveNav, onOpenNewAudit }) {
             Workspace
           </div>
           <div className="mt-1 flex items-center justify-between text-xs font-semibold text-slate-800">
-            <span className="truncate">Acme Financial Global • Production</span>
+            <span className="truncate">{activeOrg?.organization_name || 'Acme Financial Global • Production'}</span>
             <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
           </div>
         </div>

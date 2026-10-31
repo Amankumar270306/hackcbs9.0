@@ -1,0 +1,131 @@
+services:
+  # 1. YugabyteDB YSQL Primary Database
+  yugabytedb:
+    image: yugabytedb/yugabyte:latest
+    container_name: compliance-sentinel-db
+    user: root
+    command: bin/yugabyted start --base_dir=/var/lib/yugabyte/data --daemon=false --ui=false
+    restart: unless-stopped
+    ports:
+      - "5433:5433"    # YSQL PostgreSQL-compatible port
+      - "15433:15433"  # YugabyteDB YSQL Web Dashboard
+    volumes:
+      - yugabyte_data:/var/lib/yugabyte/data
+    networks:
+      - compliance_sentinel_net
+    healthcheck:
+      test: ["CMD-SHELL", "bin/yugabyted status --base_dir=/var/lib/yugabyte/data | grep -q 'YSQL Status: Ready' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 25
+      start_period: 20s
+
+  # 2. Database Migration Runner (controlled startup step)
+  migration:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: compliance-sentinel-migration
+    restart: on-failure
+    depends_on:
+      yugabytedb:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql+psycopg://yugabyte@yugabytedb:5433/compliance_sentinel
+      - YUGABYTEDB_HOST=yugabytedb
+      - YUGABYTEDB_PORT=5433
+      - DATABASE_NAME=compliance_sentinel
+      - DATABASE_USER=yugabyte
+      - DATABASE_PASSWORD=
+    networks:
+      - compliance_sentinel_net
+    command: python scripts/migrate.py
+
+  # 3. FastAPI Backend Application
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: compliance-sentinel-backend
+    restart: unless-stopped
+    depends_on:
+      yugabytedb:
+        condition: service_healthy
+      migration:
+        condition: service_completed_successfully
+    ports:
+      - "8000:8000"
+    environment:
+      - FASTAPI_ENV=${FASTAPI_ENV:-development}
+      - SECRET_KEY=${SECRET_KEY:-compliance-sentinel-dev-secret-key-32chars-min}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-compliance-sentinel-jwt-secret-key-super-secure-min-32-bytes}
+      - DATABASE_URL=postgresql+psycopg://yugabyte@yugabytedb:5433/compliance_sentinel
+      - YUGABYTEDB_HOST=yugabytedb
+      - YUGABYTEDB_PORT=5433
+      - DATABASE_NAME=compliance_sentinel
+      - DATABASE_USER=yugabyte
+      - DATABASE_PASSWORD=
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - N8N_WEBHOOK_URL=http://n8n:5678/
+      - STORAGE_LOCAL_PATH=/data/storage
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+    volumes:
+      - storage_data:/data/storage
+    networks:
+      - compliance_sentinel_net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # 4. React + Vite Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=http://localhost:8000
+    container_name: compliance-sentinel-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - compliance_sentinel_net
+
+  # 5. n8n Workflow Orchestration Service
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: compliance-sentinel-n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:-compliance_sentinel_n8n_secret_key_change_me}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678/
+      - N8N_METRICS=false
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=168
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - compliance_sentinel_net
+
+volumes:
+  yugabyte_data:
+    name: compliance_sentinel_yugabyte_data
+  n8n_data:
+    name: compliance_sentinel_n8n_data
+  storage_data:
+    name: compliance_sentinel_storage_data
+
+networks:
+  compliance_sentinel_net:
+    name: compliance_sentinel_network
+    driver: bridge
