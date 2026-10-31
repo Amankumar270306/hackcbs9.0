@@ -15,6 +15,10 @@ from app.services.ai.prompts.defence_auditor import (
     CITATION_TYPES,
     build_defence_analysis_prompt,
 )
+from app.services.ai.prompts.adjudicator import (
+    ADJUDICATOR_SYSTEM_INSTRUCTION,
+    ADJUDICATOR_ANALYSIS_PROMPT,
+)
 
 __all__ = [
     "ADVERSARIAL_STRATEGIST_SYSTEM_PROMPT",
@@ -28,5 +32,7 @@ __all__ = [
     "FINDING_CATEGORIES",
     "CITATION_TYPES",
     "build_defence_analysis_prompt",
+    "ADJUDICATOR_SYSTEM_INSTRUCTION",
+    "ADJUDICATOR_ANALYSIS_PROMPT",
 ]
 

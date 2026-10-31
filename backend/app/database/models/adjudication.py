@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from app.database.models.documents import AuditDocument
     from app.database.models.findings import Finding
     from app.database.models.identity import Organization, User
+    from app.database.models.reports import Report
 
 
 # ---------------------------------------------------------------------------
@@ -180,6 +181,10 @@ class AdjudicationRun(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         "AdjudicationContradiction",
         back_populates="adjudication_run",
         cascade="all, delete-orphan",
+    )
+    reports: Mapped[List[Report]] = relationship(
+        "Report",
+        back_populates="adjudication_run",
     )
 
     __table_args__ = (

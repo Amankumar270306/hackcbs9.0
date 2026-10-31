@@ -522,16 +522,117 @@ Severity rating boundaries:
 
 ---
 
-## 7. Automated Testing Suite
+## 7. Adjudicator & Multi-Agent Consensus Engine (Milestone 7)
 
-All 44 backend unit, integration, and security test cases execute against the live YugabyteDB YSQL instance:
+The **Adjudicator** serves as the definitive decision and reconciliation layer of Compliance Sentinel. It synthesizes and arbitrates findings across all three preceding specialized analytical agents:
+1. **Legal Analyst (Milestone 4)**: Regulatory requirements, applicability, obligation types, and legal citations.
+2. **Adversarial Strategist (Milestone 5)**: Threat scenarios (STRIDE), attack surfaces, attack paths, and residual risks.
+3. **Defence Auditor (Milestone 6)**: Discovered controls, evidence maturity ratings, and gap assessment findings.
+
+```mermaid
+flowchart TD
+    LA["Legal Analyst\n(Approved Requirements)"] -->|Obligations & Citations| AdjEngine["Adjudicator Consensus Engine"]
+    AS["Adversarial Strategist\n(STRIDE Threat Scenarios)"] -->|Threats & Attack Surfaces| AdjEngine
+    DA["Defence Auditor\n(Controls & Findings)"] -->|Discovered Safeguards & Evidence| AdjEngine
+    
+    subgraph Consensus Pipeline
+        AdjEngine --> CitVerify["Verbatim Citation Verification\n(Exact Chunk Reference Check)"]
+        CitVerify --> Contradict["Contradiction Detection Engine\n(Cross-Agent & Document Inconsistencies)"]
+        Contradict --> ConfCalc["Deterministic Confidence Scoring\n(Maturity, Gap Penalties, Capped Bounds)"]
+        ConfCalc --> DecisionStore["Structured Adjudication Decisions\n(adjudication_decisions table)"]
+        ConfCalc --> ContradictStore["Contradiction Records\n(adjudication_contradictions table)"]
+    end
+    
+    DecisionStore --> HumanRev["Human Review & Arbitration\n(Approve / Reject / Edit / Resolve)"]
+    ContradictStore --> HumanRev
+    HumanRev --> StaleMon["Stale Decision Detector\n(Upstream Audit Invalidation)"]
+```
+
+### 7.1 Controlled Outcome Vocabularies
+
+Decisions are classified using rigorous, deterministic categorical statuses:
+
+#### Requirement Adjudication Outcomes:
+- `supported_by_documented_evidence`: Verified security controls provide operational or implementation-level evidence fulfilling all requirement criteria.
+- `partially_supported`: Controls exist but evidence only reaches design or policy maturity, or leaves minor gaps.
+- `insufficient_evidence`: No qualifying controls or verified evidence chunks were found in the audit evidence repository.
+- `contradictory_evidence`: Incompatible claims discovered between policies and technical implementations or cross-agent findings.
+- `documented_nonconformance`: Explicit documentation confirming non-compliance or affirmative lack of safeguards.
+- `not_applicable`: Requirement ruled outside the scope of the target audit architecture.
+- `requires_human_review`: Ambiguity, low confidence score, or conflicting auditor assessments flag the item for human arbitration.
+
+#### Threat Adjudication Outcomes:
+- `documented_mitigations_supported`: Discovered controls provide verified, direct operational defenses mitigating the attack path.
+- `partially_mitigated`: Mitigations address preliminary steps in the attack path but leave secondary exploitation avenues open.
+- `insufficient_mitigation_evidence`: Threat remains unmitigated by documented safeguards.
+- `documented_control_weakness`: Controls are documented but explicitly exhibit known vulnerabilities or design deficits.
+- `contradictory_evidence`: Opposing claims regarding whether the exploit path is viable or blocked.
+- `requires_human_review`: Escalated for human security specialist determination.
+
+### 7.2 Cross-Agent Contradiction Detection Engine
+
+The Adjudicator automatically flags and catalogues inconsistencies into `adjudication_contradictions`:
+- `requirement_vs_control`: A policy mandates specific parameters (e.g. FIPS 140-2 Level 3 hardware token) while discovered control documents software TOTP.
+- `threat_vs_control`: Defence Auditor claims a perimeter control prevents unauthenticated access, while Adversarial Strategist verified an exploit bypass.
+- `contradictory_documents`: Document A asserts multi-region replication while Document B asserts single-datacenter operation.
+- `ai_vs_human_review`: AI agent inferred compliance but a human auditor previously rejected the underlying control or requirement.
+- `cross_agent`: Divergent severity or applicability classifications across different agent passes.
+
+### 7.3 Deterministic Confidence Scoring Model
+
+Confidence scores are computed deterministically (ranging strictly from `0.00` to `1.00`), eliminating arbitrary LLM-generated numbers:
+- **Base Score** derived from highest evidence maturity:
+  - `operational`: $0.90$
+  - `implementation`: $0.80$
+  - `design`: $0.65$
+  - `policy`: $0.50$
+  - `none`: $0.20$
+- **Penalties & Caps**:
+  - Contradiction detected: $-0.20$ penalty
+  - Invalid citation reference: $-0.25$ penalty
+  - Open / pending threat mapped: capped at $0.70$
+  - Missing agent data (e.g. no defence auditor assessment): capped at $0.60$
+- **Human Review Adjustment**:
+  - Approved by human reviewer: $+0.15$ (capped at $1.00$)
+  - Rejected by human reviewer: $-0.30$
+
+### 7.4 Stale Decision Detection
+
+If an upstream asset changes after an adjudication run completes (e.g., a new requirement is approved, a threat scenario is edited, or a control assessment is modified), the system flags the audit decisions as `is_stale = true`. The UI alerts the auditor to re-adjudicate or review the affected items.
+
+### 7.5 Adjudication API Endpoints
+
+| Endpoint | Method | Role | Description |
+|---|---|---|---|
+| `/api/organizations/{org_id}/audits/{audit_id}/adjudication/readiness` | `GET` | Member | Verify pre-flight readiness (requirements, threats, controls, document chunks). |
+| `/api/organizations/{org_id}/audits/{audit_id}/adjudication/run` | `POST` | Auditor+ | Dispatch full multi-agent consensus reconciliation pipeline. |
+| `/api/organizations/{org_id}/audits/{audit_id}/adjudication/runs` | `GET` | Member | List historical adjudication runs with metrics and run status. |
+| `/api/organizations/{org_id}/audits/{audit_id}/adjudication/decisions` | `GET` | Member | Retrieve reconciled decisions with filtering (type, outcome, confidence, review status, stale). |
+| `/api/organizations/{org_id}/audits/{audit_id}/adjudication/decisions/{decision_id}` | `GET` | Member | Retrieve specific decision details, sources, citations, and audit history. |
+| `/api/organizations/{org_id}/audits/{audit_id}/adjudication/decisions/{decision_id}/review` | `POST` | Auditor+ | Review decision (`approve`, `reject` with reason, `edit`, `request_more_information`, `reassess`). |
+| `/api/organizations/{org_id}/audits/{audit_id}/adjudication/contradictions` | `GET` | Member | List detected contradictions with resolution status and severity. |
+| `/api/organizations/{org_id}/audits/{audit_id}/adjudication/contradictions/{contradiction_id}/resolve` | `POST` | Auditor+ | Resolve contradiction with resolution rationale and action item. |
+| `/api/organizations/{org_id}/audits/{audit_id}/adjudication/stale-status` | `GET` | Member | Check if any decisions are invalidated by upstream agent updates. |
+
+---
+
+## 8. Automated Testing Suite
+
+All 50 backend unit, integration, and security test cases execute against the live YugabyteDB YSQL instance:
 
 ```bash
 # Run the complete test suite
 PYTHONPATH=backend backend/venv/bin/pytest backend/tests/ -v
 ```
 
-### Test Coverage Highlights (44/44 Passing):
+### Test Coverage Highlights (50/50 Passing):
+- **`test_adjudicator.py` (6 tests)**:
+  - Deterministic confidence scoring algorithm under all penalty scenarios (base weights by evidence maturity, -0.20 contradiction penalty, -0.25 citation penalty, 0.70 pending threat cap, 0.60 missing agent cap, and human review bonus/penalty).
+  - Adjudication readiness pre-flight check enforcing document chunks, approved requirements, threat scenarios, and control assessments.
+  - End-to-end multi-agent consensus reconciliation pipeline using `MockGeminiClient` with cross-agent synthesis, verbatim citation verification, and contradiction extraction.
+  - Human review workflow for decisions (`approve`, `reject` with mandatory reason, `edit`, `request_more_information`) and contradiction resolution with immutable `AdjudicationAuditHistory`.
+  - Stale decision detection detecting upstream changes in requirements, threats, or controls after run completion.
+  - Cross-tenant security isolation ensuring cross-tenant decision and contradiction queries return HTTP 404.
 - **`test_defence_auditor.py` (5 tests)**:
   - Deterministic risk scoring formula ($L \times I$) and strict severity boundary mapping (1–4: Low, 5–9: Medium, 10–14: High, 15–19: Very High, 20–25: Critical).
   - Defence readiness pre-flight check and validation messages.
@@ -572,7 +673,7 @@ PYTHONPATH=backend backend/venv/bin/pytest backend/tests/ -v
 
 ---
 
-## 8. Running with Docker Compose
+## 9. Running with Docker Compose
 
 ```bash
 # 1. Clone repository and copy environment template

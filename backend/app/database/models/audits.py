@@ -176,6 +176,15 @@ class Audit(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         cascade="all, delete-orphan",
         order_by="AdjudicationContradiction.created_at.desc()",
     )
+    reports: Mapped[List[Report]] = relationship(
+        "Report",
+        back_populates="audit",
+        primaryjoin="Audit.id == Report.audit_id",
+        foreign_keys="[Report.audit_id]",
+        cascade="all, delete-orphan",
+        order_by="Report.version.desc()",
+        overlaps="reports,audit_run",
+    )
 
     __table_args__ = (
         UniqueConstraint("organization_id", "id", name="uq_audits_org_id"),

@@ -183,6 +183,146 @@ class MockGeminiClient(BaseGeminiClient):
         if self.responses:
             return self.responses.pop(0)
 
+        # Check if this is an adjudicator request
+        is_adjudicator_prompt = (
+            (system_instruction and "Adjudicator" in system_instruction)
+            or "adjudication" in prompt.lower()
+            or "cross-agent reconciliation" in prompt.lower()
+        )
+
+        if is_adjudicator_prompt:
+            req_ids: List[str] = []
+            threat_ids: List[str] = []
+            control_ids: List[str] = []
+            chunk_list: List[Dict[str, Any]] = []
+            try:
+                if "INPUT AUDIT DATA & EVIDENCE CHUNKS:" in prompt:
+                    after_chunks = prompt.split("INPUT AUDIT DATA & EVIDENCE CHUNKS:")[1]
+                    if "INSTRUCTIONS:" in after_chunks:
+                        raw_json = after_chunks.split("INSTRUCTIONS:")[0].strip()
+                    elif "Respond ONLY with" in after_chunks:
+                        raw_json = after_chunks.split("Respond ONLY with")[0].strip()
+                    else:
+                        raw_json = after_chunks.strip()
+                    parsed = json.loads(raw_json)
+                    for r in parsed.get("applicable_regulatory_requirements", []):
+                        if r.get("requirement_id"):
+                            req_ids.append(r["requirement_id"])
+                    for t in parsed.get("threat_scenarios", []):
+                        if t.get("threat_id"):
+                            threat_ids.append(t["threat_id"])
+                    for c in parsed.get("discovered_controls", []):
+                        if c.get("control_id"):
+                            control_ids.append(c["control_id"])
+                    for ch in parsed.get("evidence_document_chunks", []):
+                        if ch.get("chunk_id"):
+                            chunk_list.append(ch)
+            except Exception as e:
+                logger.warning("MockGeminiClient failed to parse adjudicator inputs: %s", e)
+
+            primary_req_id = req_ids[0] if req_ids else str(uuid.uuid4())
+            primary_threat_id = threat_ids[0] if threat_ids else str(uuid.uuid4())
+            primary_control_id = control_ids[0] if control_ids else str(uuid.uuid4())
+            sample_chunk = chunk_list[0] if chunk_list else {}
+            sample_text = sample_chunk.get("content", "Enforce multi-factor authentication for remote access")
+            excerpt = sample_text[:100] if len(sample_text) > 100 else sample_text
+
+            decisions = [
+                {
+                    "category": "requirement_compliance",
+                    "related_entity_type": "requirement",
+                    "related_entity_id": primary_req_id,
+                    "outcome_status": "supported_by_documented_evidence",
+                    "summary": "Documented evidence supports implementation of remote access authentication controls.",
+                    "reasoning": "Discovered security control CTRL-001 provides documented technical specifications and implementation evidence.",
+                    "confidence_score": 0.88,
+                    "is_provisional": False,
+                    "requires_human_review": False,
+                    "evidence_limitations": "Telemetry logs are periodic rather than real-time streaming.",
+                    "assumptions": ["Assumes production IdP is synchronized with active directory."],
+                    "missing_information": [],
+                    "recommended_action": "Verify quarterly review logs during operational audit.",
+                    "supporting_sources": [
+                        {
+                            "chunk_id": sample_chunk.get("chunk_id"),
+                            "document_id": sample_chunk.get("document_id"),
+                            "filename": sample_chunk.get("filename", "security_policy.pdf"),
+                            "page_number": sample_chunk.get("page_number", 1),
+                            "section_heading": sample_chunk.get("section_title", "Access Control"),
+                            "exact_excerpt": excerpt,
+                            "source_agent": "defence_auditor",
+                            "source_entity_type": "discovered_control",
+                            "source_entity_id": primary_control_id,
+                            "source_role": "supporting",
+                        }
+                    ],
+                },
+                {
+                    "category": "threat_mitigation",
+                    "related_entity_type": "threat",
+                    "related_entity_id": primary_threat_id,
+                    "outcome_status": "documented_mitigations_supported",
+                    "summary": "Documented safeguards address public authentication brute force threat scenario.",
+                    "reasoning": "Multi-factor authentication and credential safeguards mitigate automated credential stuffing attacks.",
+                    "confidence_score": 0.85,
+                    "is_provisional": False,
+                    "requires_human_review": False,
+                    "evidence_limitations": "WAF rate-limiting rule thresholds are not explicitly verified.",
+                    "assumptions": ["WAF is active on public ingress."],
+                    "missing_information": [],
+                    "recommended_action": "Conduct penetration testing verification against auth endpoints.",
+                    "supporting_sources": [
+                        {
+                            "chunk_id": sample_chunk.get("chunk_id"),
+                            "document_id": sample_chunk.get("document_id"),
+                            "filename": sample_chunk.get("filename", "security_policy.pdf"),
+                            "page_number": sample_chunk.get("page_number", 1),
+                            "section_heading": sample_chunk.get("section_title", "Access Control"),
+                            "exact_excerpt": excerpt,
+                            "source_agent": "defence_auditor",
+                            "source_entity_type": "discovered_control",
+                            "source_entity_id": primary_control_id,
+                            "source_role": "supporting",
+                        }
+                    ],
+                }
+            ]
+
+            contradictions = []
+            if primary_req_id and primary_control_id:
+                contradictions.append({
+                    "category": "requirement_vs_control",
+                    "title": "MFA Implementation Evidence Limitation",
+                    "description": "Requirement mandates hardware token enforcement, but control documentation only confirms software TOTP.",
+                    "conflicting_claims": [
+                        {
+                            "claim": "Requirement mandates hardware-backed tokens for high-risk access.",
+                            "source_agent": "legal_analyst",
+                            "source_entity_id": primary_req_id,
+                            "excerpt": "High-risk administrative access shall require hardware-backed factors.",
+                        },
+                        {
+                            "claim": "Control specifies standard software TOTP applications.",
+                            "source_agent": "defence_auditor",
+                            "source_entity_id": primary_control_id,
+                            "excerpt": excerpt,
+                        },
+                    ],
+                    "source_references": [
+                        {"source_agent": "legal_analyst", "entity_id": primary_req_id},
+                        {"source_agent": "defence_auditor", "entity_id": primary_control_id},
+                    ],
+                    "impact": "May represent a gap for specific high-privilege root accounts.",
+                    "severity": "medium",
+                })
+
+            return {
+                "decisions": decisions,
+                "contradictions": contradictions,
+                "adjudication_summary": "Cross-agent consensus analysis completed. Reconciled requirements, threat mitigations, and controls.",
+                "missing_agent_limitations": [],
+            }
+
         # Check if this is a defence auditor request
         is_defence_prompt = (
             (system_instruction and "Defence Auditor" in system_instruction)

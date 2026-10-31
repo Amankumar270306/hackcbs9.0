@@ -226,3 +226,4 @@ def downgrade() -> None:
     DROP TABLE IF EXISTS adjudication_decisions CASCADE;
     DROP TABLE IF EXISTS adjudication_runs CASCADE;
     """)
+

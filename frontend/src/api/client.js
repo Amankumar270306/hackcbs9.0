@@ -595,6 +595,120 @@ export const defenceApi = {
   },
 };
 
+export const adjudicationApi = {
+  getReadiness: (orgId, auditId) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/adjudication-readiness`, { method: 'GET' }),
+
+  triggerRun: (orgId, auditId, data = {}) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/adjudication`, {
+      method: 'POST',
+      body: JSON.stringify({
+        model_name: data.model_name || 'gemini-1.5-flash',
+        run_in_background: data.run_in_background ?? false,
+      }),
+    }),
+
+  listRuns: (orgId, auditId) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/adjudication-runs`, { method: 'GET' }),
+
+  getRun: (orgId, auditId, runId) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/adjudication-runs/${runId}`, { method: 'GET' }),
+
+  listDecisions: (orgId, auditId, params = {}) => {
+    const query = new URLSearchParams();
+    if (params.category && params.category !== 'all') query.append('category', params.category);
+    if (params.outcome && params.outcome !== 'all') query.append('outcome', params.outcome);
+    if (params.review_status && params.review_status !== 'all') query.append('review_status', params.review_status);
+    if (params.is_provisional !== undefined && params.is_provisional !== 'all') query.append('is_provisional', params.is_provisional);
+    if (params.search) query.append('search', params.search);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return apiClient(`/api/organizations/${orgId}/audits/${auditId}/adjudication-decisions${qs}`, { method: 'GET' });
+  },
+
+  getDecision: (orgId, auditId, decisionId) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/adjudication-decisions/${decisionId}`, { method: 'GET' }),
+
+  reviewDecision: (orgId, auditId, decisionId, action, justification) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/adjudication-decisions/${decisionId}/review`, {
+      method: 'POST',
+      body: JSON.stringify({ action, justification }),
+    }),
+
+  editDecision: (orgId, auditId, decisionId, data) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/adjudication-decisions/${decisionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  listContradictions: (orgId, auditId, params = {}) => {
+    const query = new URLSearchParams();
+    if (params.category && params.category !== 'all') query.append('category', params.category);
+    if (params.resolution_status && params.resolution_status !== 'all') query.append('resolution_status', params.resolution_status);
+    if (params.severity && params.severity !== 'all') query.append('severity', params.severity);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return apiClient(`/api/organizations/${orgId}/audits/${auditId}/adjudication-contradictions${qs}`, { method: 'GET' });
+  },
+
+  getContradiction: (orgId, auditId, contradictionId) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/adjudication-contradictions/${contradictionId}`, { method: 'GET' }),
+
+  resolveContradiction: (orgId, auditId, contradictionId, resolution_status, resolution_notes) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/adjudication-contradictions/${contradictionId}/resolve`, {
+      method: 'POST',
+      body: JSON.stringify({ resolution_status, resolution_notes }),
+    }),
+
+  getStaleStatus: (orgId, auditId) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/adjudication-stale-status`, { method: 'GET' }),
+};
+
+export const reportsApi = {
+  checkReadiness: (orgId, auditId) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/reports/readiness`, { method: 'GET' }),
+
+  generateReport: (orgId, auditId, data = {}) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/reports`, {
+      method: 'POST',
+      body: JSON.stringify({
+        adjudication_run_id: data.adjudication_run_id || null,
+        title: data.title || null,
+        format: data.format || 'pdf',
+      }),
+    }),
+
+  listReports: (orgId, auditId) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/reports`, { method: 'GET' }),
+
+  getReport: (orgId, auditId, reportId) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/reports/${reportId}`, { method: 'GET' }),
+
+  getReportPreview: (orgId, auditId, reportId) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/reports/${reportId}/preview`, { method: 'GET' }),
+
+  downloadReport: async (orgId, auditId, reportId, filename = 'Compliance_Assessment_Report.pdf') => {
+    const url = `/api/organizations/${orgId}/audits/${auditId}/reports/${reportId}/download`;
+    const token = getAccessToken();
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const response = await fetch(url, { headers, credentials: 'include' });
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Download failed (${response.status}): ${errText}`);
+    }
+    const blob = await response.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(downloadUrl);
+    document.body.removeChild(a);
+  },
+};
+
 
 
 
