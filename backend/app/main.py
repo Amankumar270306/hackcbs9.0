@@ -12,6 +12,7 @@ from app.api.routes.regulatory import (
     regulatory_router,
     audit_requirements_router,
 )
+from app.api.routes.threats import threats_router
 from app.config import settings
 from app.database.connection import get_db, check_db_health
 
@@ -66,6 +67,7 @@ app.include_router(audits_router)
 app.include_router(documents_router)
 app.include_router(regulatory_router)
 app.include_router(audit_requirements_router)
+app.include_router(threats_router)
 
 
 @app.get("/health", status_code=status.HTTP_200_OK, tags=["System"])

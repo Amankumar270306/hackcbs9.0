@@ -183,7 +183,129 @@ class MockGeminiClient(BaseGeminiClient):
         if self.responses:
             return self.responses.pop(0)
 
-        # Default fallback mock response
+        # Check if this is a threat modeling request
+        is_threat_prompt = (
+            (system_instruction and "Adversarial Strategist" in system_instruction)
+            or "Adversarial Threat Modeling" in prompt
+            or "STRIDE" in prompt
+        )
+
+        if is_threat_prompt:
+            return {
+                "assets": [
+                    {
+                        "name": "Customer Authentication Database",
+                        "asset_category": "data_store",
+                        "description": "Primary PostgreSQL database storing customer credentials and password hashes.",
+                        "sensitivity": "confidential",
+                        "criticality": "critical",
+                        "data_classification": "PII & Credentials",
+                        "owner": "Authentication Service",
+                        "relevant_component": "Auth DB",
+                        "evidence_classification": "documented_fact",
+                        "confidence_score": 0.95,
+                        "source_references": [
+                            {
+                                "page_number": 1,
+                                "section_title": "Architecture Overview",
+                                "exact_excerpt": "Customer Authentication Database storing customer credentials.",
+                                "evidence_classification": "documented_fact",
+                            }
+                        ],
+                    }
+                ],
+                "attack_surfaces": [
+                    {
+                        "name": "Public Auth API Endpoint",
+                        "surface_type": "public_api",
+                        "description": "Public REST endpoint for user login and token generation.",
+                        "exposed_component": "Auth API Gateway",
+                        "access_requirements": "unauthenticated",
+                        "trust_boundary": "Internet-to-DMZ",
+                        "evidence_classification": "documented_fact",
+                        "confidence_score": 0.92,
+                        "associated_assets": ["Customer Authentication Database"],
+                        "source_references": [
+                            {
+                                "page_number": 1,
+                                "section_title": "API Specification",
+                                "exact_excerpt": "Public REST endpoint for user login.",
+                                "evidence_classification": "documented_fact",
+                            }
+                        ],
+                    }
+                ],
+                "threats": [
+                    {
+                        "threat_title": "Credential Stuffing and Brute Force on Public Auth API",
+                        "threat_description": "An adversary conducts automated credential stuffing attacks against the public login endpoint to compromise accounts without rate limiting.",
+                        "stride_category": "Spoofing",
+                        "attack_objective": "Take over user accounts and obtain valid JWT bearer tokens",
+                        "attack_vector": "Automated HTTP POST request flood using leaked credential databases",
+                        "entry_point": "/api/v1/auth/login",
+                        "preconditions": "Login endpoint lacks aggressive rate limiting and CAPTCHA challenge",
+                        "attack_steps": [
+                            "1. Attacker loads credential dictionary from previous breaches.",
+                            "2. Attacker floods /api/v1/auth/login with parallel requests.",
+                            "3. Attacker identifies successful authentication responses and extracts tokens.",
+                        ],
+                        "target_assets": ["Customer Authentication Database"],
+                        "affected_components": ["Auth API Gateway"],
+                        "trust_boundaries_crossed": ["Internet -> DMZ"],
+                        "potential_consequences": "Unauthorized account takeover, data breach, reputational harm",
+                        "cia_confidentiality": "high",
+                        "cia_integrity": "medium",
+                        "cia_availability": "low",
+                        "likelihood_score": 4,
+                        "likelihood_rationale": "High frequency of automated scanning on public endpoints.",
+                        "impact_score": 4,
+                        "impact_rationale": "Compromise of multiple customer accounts.",
+                        "is_provisional": False,
+                        "confidence_score": 0.90,
+                        "assumptions": ["Assumes no Cloudflare/WAF bot-protection is in front."],
+                        "missing_information": ["Rate limiting configuration parameters are not stated in doc."],
+                        "attack_path": [
+                            {
+                                "node_id": "NODE-1",
+                                "parent_node_id": None,
+                                "node_type": "root_objective",
+                                "description": "Compromise customer accounts via brute force",
+                                "logical_operator": "AND",
+                                "sequence_number": 1,
+                            },
+                            {
+                                "node_id": "NODE-2",
+                                "parent_node_id": "NODE-1",
+                                "node_type": "attack_step",
+                                "description": "Send automated credential pairs to login endpoint",
+                                "logical_operator": None,
+                                "sequence_number": 2,
+                            },
+                        ],
+                        "source_references": [
+                            {
+                                "page_number": 1,
+                                "section_title": "Authentication Architecture",
+                                "exact_excerpt": "Public REST endpoint for user login.",
+                                "evidence_classification": "documented_fact",
+                            }
+                        ],
+                        "mapped_requirements": [
+                            {
+                                "requirement_code": "REQ-01",
+                                "relationship_type": "directly_related",
+                                "rationale": "Directly impacts authentication and access control requirements.",
+                                "confidence_score": 0.90,
+                            }
+                        ],
+                    }
+                ],
+                "analysis_summary": "Initial adversarial threat analysis identified exposed public authentication surfaces.",
+                "assumptions": ["Default network topology assumed."],
+                "missing_information": ["Detailed WAF configuration not supplied in evidence."],
+            }
+
+        # Default fallback mock response for Legal Analyst
         return {
             "requirements": [
                 {

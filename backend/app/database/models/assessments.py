@@ -21,7 +21,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
-    from app.database.models.audits import AuditRun
+    from app.database.models.audits import Audit, AuditRun
     from app.database.models.identity import User
     from app.database.models.regulatory import (
         AuditRequirement,
@@ -29,6 +29,14 @@ if TYPE_CHECKING:
         RegulatoryFramework,
         RequirementAuditHistory,
         RequirementSource,
+    )
+    from app.database.models.threats import (
+        AttackPathNode,
+        ThreatAnalysisRun,
+        ThreatAsset,
+        ThreatAuditHistory,
+        ThreatEvidenceReference,
+        ThreatRequirementMapping,
     )
 
 
@@ -175,23 +183,149 @@ class Requirement(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 class Threat(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "threats"
 
-    organization_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    audit_run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    audit_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("audits.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    audit_run_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    threat_analysis_run_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("threat_analysis_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     threat_id_code: Mapped[str] = mapped_column(String(50), nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     threat_category: Mapped[str] = mapped_column(String(100), nullable=False)
-    severity: Mapped[str] = mapped_column(String(50), nullable=False)
-    likelihood: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    stride_category: Mapped[str] = mapped_column(String(100), default="Information Disclosure", nullable=False)
+
+    # Attack scenario specifics
+    attack_objective: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    attack_vector: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    entry_point: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    preconditions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    attack_steps: Mapped[List[str]] = mapped_column(JSONB, default=list, nullable=False)
+    target_assets: Mapped[List[str]] = mapped_column(JSONB, default=list, nullable=False)
+    affected_components: Mapped[List[str]] = mapped_column(JSONB, default=list, nullable=False)
+    trust_boundaries_crossed: Mapped[List[str]] = mapped_column(JSONB, default=list, nullable=False)
+    potential_consequences: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # CIA Impact Classification
+    cia_confidentiality: Mapped[str] = mapped_column(String(50), default="unknown", nullable=False)
+    cia_integrity: Mapped[str] = mapped_column(String(50), default="unknown", nullable=False)
+    cia_availability: Mapped[str] = mapped_column(String(50), default="unknown", nullable=False)
+
+    # Deterministic Scoring (1-5 scales, risk_score = likelihood * impact, 1-25)
+    likelihood_score: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    likelihood_rationale: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    impact_score: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    impact_rationale: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    risk_score: Mapped[int] = mapped_column(Integer, default=9, nullable=False)
+    severity: Mapped[str] = mapped_column(String(50), default="medium", nullable=False)  # 'low', 'medium', 'high', 'very_high', 'critical'
+    is_provisional: Mapped[bool] = mapped_column(default=False, nullable=False)
+    confidence_score: Mapped[float] = mapped_column(Numeric(5, 2, asdecimal=False), default=0.90, nullable=False)
+
+    # Review status & traceability
+    review_status: Mapped[str] = mapped_column(String(50), default="pending_review", nullable=False)
+    review_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reviewed_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    assumptions: Mapped[List[str]] = mapped_column(JSONB, default=list, nullable=False)
+    missing_information: Mapped[List[str]] = mapped_column(JSONB, default=list, nullable=False)
+    threat_metadata: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
 
     # Relationships
-    audit_run: Mapped[AuditRun] = relationship("AuditRun", back_populates="threats")
+    audit: Mapped[Optional[Audit]] = relationship("Audit", back_populates="threats")
+    audit_run: Mapped[Optional[AuditRun]] = relationship("AuditRun", back_populates="threats")
+    analysis_run: Mapped[Optional[ThreatAnalysisRun]] = relationship("ThreatAnalysisRun", back_populates="threats")
+    asset_mappings: Mapped[List[ThreatAsset]] = relationship(
+        "ThreatAsset",
+        back_populates="threat",
+        cascade="all, delete-orphan",
+    )
+    attack_paths: Mapped[List[AttackPathNode]] = relationship(
+        "AttackPathNode",
+        back_populates="threat",
+        cascade="all, delete-orphan",
+        order_by="AttackPathNode.sequence_number.asc()",
+    )
+    requirement_mappings: Mapped[List[ThreatRequirementMapping]] = relationship(
+        "ThreatRequirementMapping",
+        back_populates="threat",
+        cascade="all, delete-orphan",
+    )
+    evidence_references: Mapped[List[ThreatEvidenceReference]] = relationship(
+        "ThreatEvidenceReference",
+        back_populates="threat",
+        cascade="all, delete-orphan",
+    )
+    history: Mapped[List[ThreatAuditHistory]] = relationship(
+        "ThreatAuditHistory",
+        back_populates="threat",
+        cascade="all, delete-orphan",
+        order_by="ThreatAuditHistory.created_at.desc()",
+    )
+    reviewer: Mapped[Optional[User]] = relationship("User", foreign_keys=[reviewed_by])
     control_assessments: Mapped[List[ControlAssessment]] = relationship(
         "ControlAssessment",
         back_populates="threat",
         overlaps="requirement,control_assessments",
     )
+
+    @property
+    def threat_title(self) -> str:
+        return self.title
+
+    @threat_title.setter
+    def threat_title(self, val: str) -> None:
+        self.title = val
+
+    @property
+    def threat_description(self) -> str:
+        return self.description
+
+    @threat_description.setter
+    def threat_description(self, val: str) -> None:
+        self.description = val
+
+    def __init__(self, **kwargs: Any) -> None:
+        if "threat_title" in kwargs and "title" not in kwargs:
+            kwargs["title"] = kwargs.pop("threat_title")
+        if "threat_description" in kwargs and "description" not in kwargs:
+            kwargs["description"] = kwargs.pop("threat_description")
+        if "threat_id_code" not in kwargs:
+            kwargs["threat_id_code"] = f"THR-{uuid.uuid4().hex[:8].upper()}"
+
+        super().__init__(**kwargs)
+        if not self.threat_category and kwargs.get("stride_category"):
+            self.threat_category = kwargs["stride_category"]
+        elif not self.stride_category and self.threat_category:
+            self.stride_category = self.threat_category
+
+        if not self.severity:
+            score = self.risk_score or (self.likelihood_score * self.impact_score if self.likelihood_score and self.impact_score else 9)
+            if score >= 20:
+                self.severity = "critical"
+            elif score >= 15:
+                self.severity = "very_high"
+            elif score >= 10:
+                self.severity = "high"
+            elif score >= 5:
+                self.severity = "medium"
+            else:
+                self.severity = "low"
 
     __table_args__ = (
         ForeignKeyConstraint(
@@ -203,16 +337,32 @@ class Threat(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         UniqueConstraint("audit_run_id", "threat_id_code", name="uq_threats_run_threat_code"),
         UniqueConstraint("organization_id", "audit_run_id", "id", name="uq_threats_org_run_id"),
         CheckConstraint(
-            "severity IN ('low', 'medium', 'high', 'critical')",
+            "severity IN ('low', 'medium', 'high', 'very_high', 'critical')",
             name="ck_threats_severity",
         ),
         CheckConstraint(
-            "likelihood IS NULL OR likelihood IN ('low', 'medium', 'high')",
-            name="ck_threats_likelihood",
+            "review_status IN ('pending_review', 'accepted', 'rejected', 'edited', 'needs_more_information')",
+            name="ck_threats_review_status",
+        ),
+        CheckConstraint(
+            "likelihood_score >= 1 AND likelihood_score <= 5",
+            name="ck_threats_likelihood_score",
+        ),
+        CheckConstraint(
+            "impact_score >= 1 AND impact_score <= 5",
+            name="ck_threats_impact_score",
+        ),
+        CheckConstraint(
+            "risk_score >= 1 AND risk_score <= 25",
+            name="ck_threats_risk_score",
         ),
         Index("ix_threats_org_id", "organization_id"),
+        Index("ix_threats_audit_id", "audit_id"),
         Index("ix_threats_run_id", "audit_run_id"),
+        Index("ix_threats_analysis_run", "threat_analysis_run_id"),
         Index("ix_threats_severity", "severity"),
+        Index("ix_threats_review_status", "review_status"),
+        Index("ix_threats_stride", "stride_category"),
     )
 
     def __repr__(self) -> str:

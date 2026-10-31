@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import AuditDocumentsSection from './AuditDocumentsSection';
 import AuditRequirementsTab from './AuditRequirementsTab';
+import ThreatAnalysisSection from './ThreatAnalysisSection';
 
 export default function AuditDetailsModal({ audit, onClose }) {
   if (!audit) return null;
@@ -74,6 +75,18 @@ export default function AuditDetailsModal({ audit, onClose }) {
           </button>
 
           <button
+            onClick={() => setActiveTab('threats')}
+            className={`py-3 flex items-center space-x-2 border-b-2 cursor-pointer transition-colors ${
+              activeTab === 'threats'
+                ? 'border-rose-600 text-rose-600'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <ShieldAlert className="h-4 w-4" />
+            <span>Threat Analysis (STRIDE)</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('consensus')}
             className={`py-3 flex items-center space-x-2 border-b-2 cursor-pointer transition-colors ${
               activeTab === 'consensus'
@@ -95,6 +108,8 @@ export default function AuditDetailsModal({ audit, onClose }) {
             />
           ) : activeTab === 'requirements' ? (
             <AuditRequirementsTab audit={audit} />
+          ) : activeTab === 'threats' ? (
+            <ThreatAnalysisSection audit={audit} />
           ) : (
             <div className="space-y-5">
               {/* Top Summary Bar */}

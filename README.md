@@ -366,16 +366,115 @@ flowchart TD
 
 ---
 
-## 5. Automated Testing Suite
+## 5. Adversarial Strategist: Threat Generation & Attack-Path Analysis (Milestone 5)
 
-All 34 backend unit, integration, and security test cases execute against the live YugabyteDB YSQL instance:
+The **Adversarial Strategist** is an autonomous AI agent specialized in rigorous, evidence-grounded threat modeling and attack path analysis. It evaluates target architectures and security controls against approved regulatory requirements to discover exposed attack surfaces, sensitive assets, multi-step attack paths, and quantifiable security risks.
+
+### 5.1 Threat Modeling Methodology
+
+```mermaid
+flowchart TD
+    DocEvidence["Audit Evidence Documents\n(PDF/DOCX Architecture & Policies)"]
+    ApprovedReqs["Approved Regulatory Requirements\n(PCI-DSS, SOC 2, ISO 27001)"]
+    
+    subgraph AdversarialStrategist["Adversarial Strategist Agent (Gemini 1.5 Pro/Flash)"]
+        AssetDisc["Asset Discovery &\nData Classification"]
+        SurfaceIdent["Attack Surface Identification &\nTrust Boundaries"]
+        STRIDEGen["STRIDE Threat Modeling &\nAttack Objectives"]
+        AttackTree["Attack-Path Tree\nDecomposition (AND/OR)"]
+        ReqMap["Regulatory Control Mapping\n(Approved Only)"]
+    end
+    
+    subgraph DeterministicEngine["Deterministic Risk Engine (Backend)"]
+        Calc["Risk Score = Likelihood (1-5) * Impact (1-5)\n[Range: 1 - 25]"]
+        SevMap["Severity Classification:\nLow (1-4) | Medium (5-9) | High (10-14)\nVery High (15-19) | Critical (20-25)"]
+        ProvCheck["Provisional Flagging\n(Unstated Assumptions / Missing Info)"]
+    end
+    
+    subgraph HumanReview["Human Auditor in the Loop"]
+        Accept["Accept Threat"]
+        Reject["Reject Threat\n(Mandatory Justification)"]
+        Edit["Edit Threat Parameters\n(Deterministic Recalculation)"]
+        ReqInfo["Request More Information"]
+        AuditTrail["Immutable Audit History Trail"]
+    end
+
+    DocEvidence --> AssetDisc & SurfaceIdent & STRIDEGen
+    ApprovedReqs --> ReqMap
+    AssetDisc --> STRIDEGen
+    SurfaceIdent --> STRIDEGen
+    STRIDEGen --> AttackTree & ReqMap
+    STRIDEGen --> Calc
+    Calc --> SevMap --> ProvCheck
+    ProvCheck --> HumanReview
+```
+
+### 5.2 STRIDE Taxonomy & CIA Triad Impact
+
+Every generated threat is classified strictly into one of the six standard STRIDE categories:
+1. **Spoofing**: Impersonating an identity, principal, process, or service (e.g. forged JWT, credential stuffing, DNS spoofing).
+2. **Tampering**: Unauthorized modification of data at rest, data in transit, code, or configuration (e.g. SQL injection, payload manipulation).
+3. **Repudiation**: Executing actions without adequate or immutable audit logs, preventing attribution.
+4. **Information Disclosure**: Exposing confidential data or credentials to unauthorized actors (e.g. plaintext PII leaks, SSRF, verbose error logs).
+5. **Denial of Service**: Exhausting system resources or disrupting service availability (e.g. ReDoS, connection pool exhaustion, resource exhaustion).
+6. **Elevation of Privilege**: Circumventing access control boundaries to gain unauthorized capabilities (e.g. IDOR, RBAC bypass, container escape).
+
+In addition, each threat scenario evaluates the **CIA Triad** impact on a standardized scale (`none`, `low`, `medium`, `high`, `critical`, `unknown`) for Confidentiality, Integrity, and Availability.
+
+### 5.3 Deterministic Risk Calculation
+
+The LLM estimates likelihood (1–5) and impact (1–5) with explicit technical rationales, but **never calculates arithmetic**. The backend service deterministically computes:
+
+$$\text{Risk Score} = \text{Likelihood Score} \times \text{Impact Score}$$
+
+- **Range**: 1 to 25
+- **Severity Mapping**:
+  - `1 - 4`: **Low**
+  - `5 - 9`: **Medium**
+  - `10 - 14`: **High**
+  - `15 - 19`: **Very High**
+  - `20 - 25`: **Critical**
+- **Provisional Status**: Marked `is_provisional = true` if the scenario depends on unverified assumptions or missing configuration data.
+
+### 5.4 Adversarial Strategist API Endpoints
+
+| Endpoint | Method | Role | Description |
+|---|---|---|---|
+| `/api/organizations/{org_id}/audits/{audit_id}/threat-readiness` | `GET` | Member | Pre-flight readiness check (approved requirements, documents, chunks). |
+| `/api/organizations/{org_id}/audits/{audit_id}/threat-analysis` | `POST` | Auditor+ | Trigger Adversarial Threat Analysis run (sync or background). |
+| `/api/organizations/{org_id}/audits/{audit_id}/threat-analysis` | `GET` | Member | List threat modeling execution runs. |
+| `/api/organizations/{org_id}/audits/{audit_id}/threat-analysis/{run_id}` | `GET` | Member | Retrieve execution run status, duration, and metrics. |
+| `/api/organizations/{org_id}/audits/{audit_id}/threat-analysis/{run_id}/retry` | `POST` | Auditor+ | Retry a failed threat analysis run. |
+| `/api/organizations/{org_id}/audits/{audit_id}/assets` | `GET` | Member | List discovered assets with sensitivity and data classification. |
+| `/api/organizations/{org_id}/audits/{audit_id}/assets/{asset_id}` | `GET` | Member | Get discovered asset details and source references. |
+| `/api/organizations/{org_id}/audits/{audit_id}/attack-surfaces` | `GET` | Member | List attack surfaces, entry points, and trust boundaries. |
+| `/api/organizations/{org_id}/audits/{audit_id}/threats` | `GET` | Member | List threats with STRIDE, severity, review status, and search filters. |
+| `/api/organizations/{org_id}/audits/{audit_id}/threats/{threat_id}` | `GET` | Member | Get full threat scenario with attack tree, evidence citations, and mappings. |
+| `/api/organizations/{org_id}/audits/{audit_id}/threats/{threat_id}/accept` | `POST` | Auditor+ | Accept threat scenario as valid and applicable. |
+| `/api/organizations/{org_id}/audits/{audit_id}/threats/{threat_id}/reject` | `POST` | Auditor+ | Reject threat scenario with mandatory justification reason. |
+| `/api/organizations/{org_id}/audits/{audit_id}/threats/{threat_id}/request-review` | `POST` | Auditor+ | Flag threat scenario as needing additional architectural evidence. |
+| `/api/organizations/{org_id}/audits/{audit_id}/threats/{threat_id}` | `PATCH` | Auditor+ | Edit threat parameters with deterministic risk recalculation and audit trail. |
+| `/api/organizations/{org_id}/audits/{audit_id}/threats/{threat_id}/attack-path` | `GET` | Member | Retrieve structured attack tree nodes for visual graph rendering. |
+| `/api/organizations/{org_id}/audits/{audit_id}/threats/{threat_id}/requirements` | `GET` | Member | Retrieve mapped approved regulatory requirements. |
+
+---
+
+## 6. Automated Testing Suite
+
+All 39 backend unit, integration, and security test cases execute against the live YugabyteDB YSQL instance:
 
 ```bash
 # Run the complete test suite
 PYTHONPATH=backend backend/venv/bin/pytest backend/tests/ -v
 ```
 
-### Test Coverage Highlights (34/34 Passing):
+### Test Coverage Highlights (39/39 Passing):
+- **`test_threat_analysis.py` (5 tests)**:
+  - Deterministic risk scoring formula ($L \times I$) and strict severity boundary mapping.
+  - Threat analysis readiness pre-flight check and advisory validation messages.
+  - End-to-end Adversarial Threat Modeling pipeline with `MockGeminiClient` (asset discovery, attack surfaces, STRIDE threats, attack tree nodes, approved requirement linkage, and verbatim excerpt validation).
+  - Human review workflow (`accept`, `reject` with mandatory reason, `request_review`, `edit` with deterministic score recalculation, and immutable `ThreatAuditHistory` trail).
+  - Multi-tenant isolation ensuring cross-tenant threat access is rejected with HTTP 404.
 - **`test_regulatory_knowledge.py` (6 tests)**:
   - Framework lifecycle (CRUD, constraints, defaults).
   - Regulatory document upload (PDF/DOCX), extraction, and deterministic chunking in YugabyteDB.

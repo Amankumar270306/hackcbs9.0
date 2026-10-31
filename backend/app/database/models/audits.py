@@ -28,6 +28,11 @@ if TYPE_CHECKING:
     from app.database.models.agents import AgentRun
     from app.database.models.reports import Report
     from app.database.models.regulatory import AuditRequirement
+    from app.database.models.threats import (
+        AttackSurface,
+        DiscoveredAsset,
+        ThreatAnalysisRun,
+    )
 
 
 class Audit(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -75,6 +80,36 @@ class Audit(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         foreign_keys="[AuditRequirement.audit_id]",
         cascade="all, delete-orphan",
         order_by="AuditRequirement.created_at.desc()",
+    )
+    threat_analysis_runs: Mapped[List[ThreatAnalysisRun]] = relationship(
+        "ThreatAnalysisRun",
+        back_populates="audit",
+        primaryjoin="Audit.id == ThreatAnalysisRun.audit_id",
+        foreign_keys="[ThreatAnalysisRun.audit_id]",
+        cascade="all, delete-orphan",
+        order_by="ThreatAnalysisRun.created_at.desc()",
+    )
+    discovered_assets: Mapped[List[DiscoveredAsset]] = relationship(
+        "DiscoveredAsset",
+        primaryjoin="Audit.id == DiscoveredAsset.audit_id",
+        foreign_keys="[DiscoveredAsset.audit_id]",
+        cascade="all, delete-orphan",
+        order_by="DiscoveredAsset.created_at.desc()",
+    )
+    attack_surfaces: Mapped[List[AttackSurface]] = relationship(
+        "AttackSurface",
+        primaryjoin="Audit.id == AttackSurface.audit_id",
+        foreign_keys="[AttackSurface.audit_id]",
+        cascade="all, delete-orphan",
+        order_by="AttackSurface.created_at.desc()",
+    )
+    threats: Mapped[List[Threat]] = relationship(
+        "Threat",
+        back_populates="audit",
+        primaryjoin="Audit.id == Threat.audit_id",
+        foreign_keys="[Threat.audit_id]",
+        cascade="all, delete-orphan",
+        order_by="Threat.created_at.desc()",
     )
 
     __table_args__ = (

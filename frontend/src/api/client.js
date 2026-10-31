@@ -429,5 +429,91 @@ export const regulatoryApi = {
     ),
 };
 
+// Threat Modeling & Adversarial Strategist API
+export const threatApi = {
+  checkReadiness: (orgId, auditId) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/threat-readiness`, { method: 'GET' }),
+
+  triggerThreatAnalysis: (orgId, auditId, data = {}) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/threat-analysis`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  listThreatRuns: (orgId, auditId) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/threat-analysis`, { method: 'GET' }),
+
+  getThreatRun: (orgId, auditId, runId) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/threat-analysis/${runId}`, { method: 'GET' }),
+
+  retryThreatRun: (orgId, auditId, runId) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/threat-analysis/${runId}/retry`, {
+      method: 'POST',
+    }),
+
+  listAssets: (orgId, auditId, category = null) => {
+    const qs = category && category !== 'all' ? `?category=${category}` : '';
+    return apiClient(`/api/organizations/${orgId}/audits/${auditId}/assets${qs}`, { method: 'GET' });
+  },
+
+  getAsset: (orgId, auditId, assetId) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/assets/${assetId}`, { method: 'GET' }),
+
+  listAttackSurfaces: (orgId, auditId, surfaceType = null) => {
+    const qs = surfaceType && surfaceType !== 'all' ? `?surface_type=${surfaceType}` : '';
+    return apiClient(`/api/organizations/${orgId}/audits/${auditId}/attack-surfaces${qs}`, { method: 'GET' });
+  },
+
+  listThreats: (orgId, auditId, params = {}) => {
+    const query = new URLSearchParams();
+    if (params.stride_category && params.stride_category !== 'all') query.append('stride_category', params.stride_category);
+    if (params.severity && params.severity !== 'all') query.append('severity', params.severity);
+    if (params.review_status && params.review_status !== 'all') query.append('review_status', params.review_status);
+    if (params.search) query.append('search', params.search);
+    if (params.page) query.append('page', params.page);
+    if (params.page_size) query.append('page_size', params.page_size);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return apiClient(`/api/organizations/${orgId}/audits/${auditId}/threats${qs}`, { method: 'GET' });
+  },
+
+  getThreatDetail: (orgId, auditId, threatId) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/threats/${threatId}`, { method: 'GET' }),
+
+  acceptThreat: (orgId, auditId, threatId, reason = '') =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/threats/${threatId}/accept`, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'accept', reason }),
+    }),
+
+  rejectThreat: (orgId, auditId, threatId, reason) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/threats/${threatId}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'reject', reason }),
+    }),
+
+  requestMoreInformation: (orgId, auditId, threatId, reason = '') =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/threats/${threatId}/request-review`, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'request_review', reason }),
+    }),
+
+  editThreat: (orgId, auditId, threatId, data) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/threats/${threatId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  getAttackPath: (orgId, auditId, threatId) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/threats/${threatId}/attack-path`, {
+      method: 'GET',
+    }),
+
+  getThreatRequirements: (orgId, auditId, threatId) =>
+    apiClient(`/api/organizations/${orgId}/audits/${auditId}/threats/${threatId}/requirements`, {
+      method: 'GET',
+    }),
+};
+
+
 
 

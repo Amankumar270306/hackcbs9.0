@@ -28,6 +28,16 @@ from app.database.models.assessments import (
     Threat,
     ControlAssessment,
 )
+from app.database.models.threats import (
+    ThreatAnalysisRun,
+    DiscoveredAsset,
+    AttackSurface,
+    AttackPathNode,
+    ThreatAsset,
+    ThreatRequirementMapping,
+    ThreatAuditHistory,
+    ThreatEvidenceReference,
+)
 from app.database.models.findings import (
     Finding,
     EvidenceReference,
@@ -71,6 +81,15 @@ __all__ = [
     "Requirement",
     "Threat",
     "ControlAssessment",
+    # Adversarial Strategist Threat Modeling (Milestone 5)
+    "ThreatAnalysisRun",
+    "DiscoveredAsset",
+    "AttackSurface",
+    "AttackPathNode",
+    "ThreatAsset",
+    "ThreatRequirementMapping",
+    "ThreatAuditHistory",
+    "ThreatEvidenceReference",
     # Findings & Evidence
     "Finding",
     "EvidenceReference",
