@@ -7,6 +7,11 @@ from sqlalchemy.orm import Session
 from app.api.routes.auth import router as auth_router
 from app.api.routes.organizations import router as organizations_router
 from app.api.routes.audits import router as audits_router
+from app.api.routes.documents import router as documents_router
+from app.api.routes.regulatory import (
+    regulatory_router,
+    audit_requirements_router,
+)
 from app.config import settings
 from app.database.connection import get_db, check_db_health
 
@@ -58,6 +63,9 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(organizations_router)
 app.include_router(audits_router)
+app.include_router(documents_router)
+app.include_router(regulatory_router)
+app.include_router(audit_requirements_router)
 
 
 @app.get("/health", status_code=status.HTTP_200_OK, tags=["System"])

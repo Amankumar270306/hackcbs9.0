@@ -34,12 +34,17 @@ class Settings(BaseSettings):
 
     # LLM & Workflow Services
     GEMINI_API_KEY: Optional[str] = None
+    GEMINI_MODEL: str = "gemini-2.5-flash"
+    GEMINI_TEMPERATURE: float = 0.1
+    GEMINI_MAX_OUTPUT_TOKENS: int = 4096
+    GEMINI_TIMEOUT_SECONDS: int = 60
     N8N_WEBHOOK_URL: Optional[str] = None
     N8N_ENCRYPTION_KEY: Optional[str] = None
 
-    # Storage
+    # Storage & Uploads
     STORAGE_TYPE: str = "local"
-    STORAGE_LOCAL_PATH: str = "/tmp/compliance_sentinel/storage"
+    STORAGE_LOCAL_PATH: str = "/data/storage" if os.path.exists("/data/storage") else "/tmp/compliance_sentinel/storage"
+    MAX_UPLOAD_SIZE_BYTES: int = 26214400  # 25 MB
 
     # Frontend CORS
     FRONTEND_URL: str = "http://localhost:3000"

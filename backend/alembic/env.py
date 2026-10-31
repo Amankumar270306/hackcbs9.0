@@ -3,7 +3,7 @@ import sys
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
-from alembic import context
+from alembic import context  # type: ignore[attr-defined]
 
 # Ensure backend root is on sys.path
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

@@ -2,6 +2,11 @@
   "include": [
     "backend"
   ],
+  "exclude": [
+    "backend/alembic",
+    "backend/venv",
+    "backend/.pytest_cache"
+  ],
   "extraPaths": [
     "backend"
   ],

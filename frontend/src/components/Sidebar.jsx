@@ -12,13 +12,15 @@ import {
   ChevronDown,
   ExternalLink,
   ShieldAlert,
-  Sparkles
+  Sparkles,
+  BookOpen,
 } from 'lucide-react';
 
 export default function Sidebar({ activeNav, setActiveNav, onOpenNewAudit }) {
   const { activeOrg } = useAuth();
   const navItems = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'regulatory', label: 'Regulatory KB', icon: BookOpen, badge: 'Agent', badgeColor: 'bg-emerald-100 text-emerald-700 font-semibold' },
     { id: 'new-audit', label: 'New Audit', icon: PlusCircle, action: onOpenNewAudit },
     { id: 'audit-execution', label: 'Audit Execution', icon: PlayCircle, badge: 'Live', badgeColor: 'bg-blue-100 text-blue-700' },
     { id: 'findings', label: 'Findings', icon: ShieldAlert, badge: '14 New', badgeColor: 'bg-rose-100 text-rose-700 font-semibold' },

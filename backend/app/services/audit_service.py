@@ -124,6 +124,7 @@ class AuditService:
             doc_count_stmt = select(func.count()).select_from(AuditDocument).where(
                 AuditDocument.organization_id == organization_id,
                 AuditDocument.audit_id == audit.id,
+                AuditDocument.deleted_at.is_(None),
             )
             doc_count = db.scalar(doc_count_stmt) or 0
 
@@ -202,6 +203,7 @@ class AuditService:
         doc_count_stmt = select(func.count()).select_from(AuditDocument).where(
             AuditDocument.organization_id == organization_id,
             AuditDocument.audit_id == audit.id,
+            AuditDocument.deleted_at.is_(None),
         )
         doc_count = db.scalar(doc_count_stmt) or 0
 

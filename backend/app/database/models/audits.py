@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from app.database.models.findings import Finding
     from app.database.models.agents import AgentRun
     from app.database.models.reports import Report
+    from app.database.models.regulatory import AuditRequirement
 
 
 class Audit(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -58,6 +59,22 @@ class Audit(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         back_populates="audit",
         cascade="all, delete-orphan",
         order_by="AuditRun.run_number.desc()",
+    )
+    documents: Mapped[List[AuditDocument]] = relationship(
+        "AuditDocument",
+        back_populates="audit",
+        primaryjoin="Audit.id == AuditDocument.audit_id",
+        foreign_keys="[AuditDocument.audit_id]",
+        cascade="all, delete-orphan",
+        order_by="AuditDocument.created_at.desc()",
+    )
+    audit_requirements: Mapped[List[AuditRequirement]] = relationship(
+        "AuditRequirement",
+        back_populates="audit",
+        primaryjoin="Audit.id == AuditRequirement.audit_id",
+        foreign_keys="[AuditRequirement.audit_id]",
+        cascade="all, delete-orphan",
+        order_by="AuditRequirement.created_at.desc()",
     )
 
     __table_args__ = (
@@ -114,6 +131,8 @@ class AuditRun(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     documents: Mapped[List[AuditDocument]] = relationship(
         "AuditDocument",
         back_populates="audit_run",
+        primaryjoin="AuditRun.id == AuditDocument.audit_run_id",
+        foreign_keys="[AuditDocument.audit_run_id]",
         cascade="all, delete-orphan",
     )
     requirements: Mapped[List[Requirement]] = relationship(

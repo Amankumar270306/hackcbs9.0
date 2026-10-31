@@ -14,6 +14,15 @@ from app.database.models.documents import (
     AuditDocument,
     DocumentChunk,
 )
+from app.database.models.regulatory import (
+    RegulatoryFramework,
+    RegulatoryDocument,
+    RegulatoryDocumentChunk,
+    RequirementSource,
+    AuditRequirement,
+    RequirementAuditHistory,
+    RegulatoryExtractionJob,
+)
 from app.database.models.assessments import (
     Requirement,
     Threat,
@@ -50,6 +59,14 @@ __all__ = [
     # Document Management
     "AuditDocument",
     "DocumentChunk",
+    # Regulatory Knowledge Base
+    "RegulatoryFramework",
+    "RegulatoryDocument",
+    "RegulatoryDocumentChunk",
+    "RequirementSource",
+    "AuditRequirement",
+    "RequirementAuditHistory",
+    "RegulatoryExtractionJob",
     # Compliance & Threats
     "Requirement",
     "Threat",

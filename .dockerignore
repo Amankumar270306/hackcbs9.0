@@ -15,7 +15,13 @@ frontend/dist/
 node_modules/
 dist/
 
-# Backend specific
+# Storage & uploaded files
+storage/
+data/storage/
+uploads/
+/tmp/compliance_sentinel/
+*.pdf
+*.docx
 backend/venv/
 backend/.venv/
 backend/__pycache__/

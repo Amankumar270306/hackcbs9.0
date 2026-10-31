@@ -15,6 +15,7 @@ import FindingsByCategory from './components/FindingsByCategory';
 import PostureStatusDonut from './components/PostureStatusDonut';
 import RecentAuditsTable from './components/RecentAuditsTable';
 import EngineFooter from './components/EngineFooter';
+import RegulatoryKnowledgeSection from './components/RegulatoryKnowledgeSection';
 
 import NewAuditModal from './components/NewAuditModal';
 import AuditDetailsModal from './components/AuditDetailsModal';
@@ -50,44 +51,50 @@ function DashboardView() {
 
         {/* Main Dashboard Workspace */}
         <main className="flex-1 p-4 sm:p-6 lg:p-7 max-w-[1720px] mx-auto w-full space-y-6">
-          {/* Header section with active kubernetes sensor badge & date toggles */}
-          <OverviewHeader
-            onExportBriefing={() => setIsBriefingOpen(true)}
-          />
+          {activeNav === 'regulatory' ? (
+            <RegulatoryKnowledgeSection />
+          ) : (
+            <>
+              {/* Header section with active kubernetes sensor badge & date toggles */}
+              <OverviewHeader
+                onExportBriefing={() => setIsBriefingOpen(true)}
+              />
 
-          {/* 5 Top KPI Cards */}
-          <MetricCards />
+              {/* 5 Top KPI Cards */}
+              <MetricCards />
 
-          {/* Middle Row: Risk Distribution & Agent Velocity */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
-            <RiskDistribution
-              onExploreMatrix={() => setIsBriefingOpen(true)}
-            />
-            <AgentVelocity
-              onSelectAgent={() => setIsDebuggerOpen(true)}
-            />
-          </div>
+              {/* Middle Row: Risk Distribution & Agent Velocity */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
+                <RiskDistribution
+                  onExploreMatrix={() => setIsBriefingOpen(true)}
+                />
+                <AgentVelocity
+                  onSelectAgent={() => setIsDebuggerOpen(true)}
+                />
+              </div>
 
-          {/* Second Row: Findings by Category & Posture Status Breakdown */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
-            <FindingsByCategory
-              onConfigureGuardrails={() => alert('Opening Guardrails Configuration Engine...')}
-            />
-            <PostureStatusDonut
-              onTriggerCheck={() => alert('Triggering instant multi-agent automated check...')}
-            />
-          </div>
+              {/* Second Row: Findings by Category & Posture Status Breakdown */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
+                <FindingsByCategory
+                  onConfigureGuardrails={() => alert('Opening Guardrails Configuration Engine...')}
+                />
+                <PostureStatusDonut
+                  onTriggerCheck={() => alert('Triggering instant multi-agent automated check...')}
+                />
+              </div>
 
-          {/* Recent Audits Table */}
-          <RecentAuditsTable
-            onSelectAudit={(audit) => setSelectedAudit(audit)}
-            onOpenNewAudit={() => setIsNewAuditOpen(true)}
-          />
+              {/* Recent Audits Table */}
+              <RecentAuditsTable
+                onSelectAudit={(audit) => setSelectedAudit(audit)}
+                onOpenNewAudit={() => setIsNewAuditOpen(true)}
+              />
 
-          {/* Engine Footer Banner */}
-          <EngineFooter
-            onOpenDebugger={() => setIsDebuggerOpen(true)}
-          />
+              {/* Engine Footer Banner */}
+              <EngineFooter
+                onOpenDebugger={() => setIsDebuggerOpen(true)}
+              />
+            </>
+          )}
         </main>
       </div>
 

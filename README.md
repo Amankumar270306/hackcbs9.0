@@ -176,7 +176,110 @@ Revokes active refresh session in the database and clears the browser cookie.
 
 ---
 
-## 4. Frontend Application Features
+### 3.4 Document Management & Ingestion (`/api/organizations/{org_id}/audits/{audit_id}/documents`)
+
+All endpoints enforce multi-tenant organization isolation, audit ownership verification, and RBAC (`owner`, `admin`, `auditor`, `analyst`, and `viewer`).
+
+| Method | Endpoint | Allowed Roles | Description |
+|---|---|---|---|
+| `POST` | `/api/organizations/{org_id}/audits/{audit_id}/documents` | `owner`, `admin`, `auditor`, `analyst` | Upload PDF or DOCX file (max 25MB). Validates magic bytes, checks duplicate SHA-256 within the audit, persists to disk, and triggers background extraction & chunking. |
+| `GET` | `/api/organizations/{org_id}/audits/{audit_id}/documents` | All members | List active documents with pagination (`page`, `size`), search by filename (`search`), and status filter (`status`). |
+| `GET` | `/api/organizations/{org_id}/audits/{audit_id}/documents/{doc_id}` | All members | Retrieve document metadata, page/chunk counts, and upload details. |
+| `GET` | `/api/organizations/{org_id}/audits/{audit_id}/documents/{doc_id}/status` | All members | Retrieve real-time processing status, errors, and chunk statistics. |
+| `GET` | `/api/organizations/{org_id}/audits/{audit_id}/documents/{doc_id}/text` | All members | Retrieve full extracted plain-text stream for preview. |
+| `GET` | `/api/organizations/{org_id}/audits/{audit_id}/documents/{doc_id}/chunks` | All members | Retrieve paginated chunks with source traceability (page numbers, section titles, and character offsets). |
+| `GET` | `/api/organizations/{org_id}/audits/{audit_id}/documents/{doc_id}/download` | All members | Securely download the original stored document with sanitized attachment headers. |
+| `POST` | `/api/organizations/{org_id}/audits/{audit_id}/documents/{doc_id}/retry` | `owner`, `admin`, `auditor`, `analyst` | Re-queue and re-process failed documents with concurrency protection. |
+| `DELETE` | `/api/organizations/{org_id}/audits/{audit_id}/documents/{doc_id}` | `owner`, `admin`, `auditor` | Soft-delete document, invalidating all subsequent access. |
+
+#### cURL Examples:
+
+**1. Upload a Document:**
+```bash
+curl -X POST "http://localhost:8000/api/organizations/{org_id}/audits/{audit_id}/documents" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -F "file=@soc2_policy.pdf;type=application/pdf"
+```
+
+**2. List Documents:**
+```bash
+curl -X GET "http://localhost:8000/api/organizations/{org_id}/audits/{audit_id}/documents?status=completed&page=1&size=20" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+**3. Inspect Extracted Text:**
+```bash
+curl -X GET "http://localhost:8000/api/organizations/{org_id}/audits/{audit_id}/documents/{doc_id}/text" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+**4. Inspect Chunks with Traceability:**
+```bash
+curl -X GET "http://localhost:8000/api/organizations/{org_id}/audits/{audit_id}/documents/{doc_id}/chunks?page=1&size=10" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+**5. Secure Download:**
+```bash
+curl -O -J -X GET "http://localhost:8000/api/organizations/{org_id}/audits/{audit_id}/documents/{doc_id}/download" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+**6. Retry Failed Processing:**
+```bash
+curl -X POST "http://localhost:8000/api/organizations/{org_id}/audits/{audit_id}/documents/{doc_id}/retry" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+**7. Delete Document:**
+```bash
+curl -X DELETE "http://localhost:8000/api/organizations/{org_id}/audits/{audit_id}/documents/{doc_id}" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+---
+
+## 4. Document Ingestion & Processing Architecture (Milestone 3)
+
+```mermaid
+flowchart TD
+    Upload["Client Multipart Upload\n(POST .../documents)"]
+    Validation["Validation Pipeline\n1. Magic Bytes Check (%PDF- / PK\\x03\\x04)\n2. Max Size Boundary (25 MB)\n3. SHA-256 Duplicate Collision Check"]
+    Storage["Persistent Storage Engine\nstorage/{org_id}/{audit_id}/{doc_id}/{stored_filename}"]
+    Record["YugabyteDB AuditDocument\nStatus: 'uploaded'"]
+    Background["Async Background Worker\n(Dedicated DB Session)"]
+    Extractor{"Extractor Router"}
+    PDF["PyMuPDF (fitz)\n- Page-level Text\n- Page Boundaries (1-indexed)\n- Scanned/Image-Only Detection"]
+    DOCX["python-docx\n- Paragraph Order\n- Heading Hierarchy (H1-H3)\n- Markdown Table Formatter"]
+    Chunker["Deterministic Chunker\n- Target: 800-1,200 tokens\n- Overlap: 100-150 tokens\n- Full Source Traceability"]
+    PersistChunks["Transactional DB Persistence\n- document_chunks table\n- doc status -> 'completed'\n- chunk/page/char counts updated"]
+
+    Upload --> Validation
+    Validation --> Storage
+    Storage --> Record
+    Record --> Background
+    Background --> Extractor
+    Extractor -->|PDF| PDF
+    Extractor -->|DOCX| DOCX
+    PDF --> Chunker
+    DOCX --> Chunker
+    Chunker --> PersistChunks
+```
+
+### 4.1 Key Implementation Details:
+- **Binary Separation**: Binary files are never stored inside YugabyteDB. Files are written to persistent storage (`/data/storage` mounted as Docker volume `compliance_sentinel_storage_data`), and only metadata, status, metrics, and extracted chunks are saved to YugabyteDB.
+- **Content Validation**: File validation inspects actual magic bytes rather than trusting client-provided filenames or MIME types (`%PDF-` for PDFs, `PK\x03\x04` and OOXML structure for DOCX).
+- **Duplicate Prevention**: SHA-256 hash is computed in streaming chunks during upload. If an active document in the same audit possesses identical SHA-256, `409 Conflict` is returned.
+- **Deterministic Chunking**:
+  - Target size: 800–1,200 tokens (~3,200–4,800 characters)
+  - Overlap: 100–150 tokens (~400–600 characters)
+  - Traceability: Every chunk preserves `document_id`, `chunk_index`, `page_number` or `page_start-page_end`, `section_title`, and character offsets (`start_char_offset`, `end_char_offset`).
+  - DOCX page numbers: Word documents lack physical pagination, so `page_number` is preserved as `None` without fabrication.
+- **Scanned PDF Handling**: Scanned or image-only PDFs with no extractable text are automatically detected, flagged with `is_scanned_or_image_only: true` and `requires_ocr: true` in metadata, and reported transparently. OCR is not implemented in this milestone.
+
+---
+
+## 5. Frontend Application Features
 
 - **Enterprise Login (`/login`)**: High-contrast, accessibility-tested authentication UI matching Compliance Sentinel brand aesthetics.
 - **Organization Registration (`/register`)**: Self-serve workspace onboarding with real-time validation and instant credential generation.
@@ -184,41 +287,124 @@ Revokes active refresh session in the database and clears the browser cookie.
 - **Multi-Tenant Workspace Switcher**: Quick dropdown in top navbar and sidebar allowing instant switching across tenant contexts.
 - **Audit Case Dispatcher**: Modal dialog connecting directly to `POST /api/organizations/{org_id}/audits` and dispatching the first sequential run.
 - **Live Audits Table**: Real-time assessments table connected to live YugabyteDB partitions, with server-side pagination, search, and empty state workflows.
+- **Audit Documents & Evidence Hub**:
+  - Drag-and-drop file upload zone with file picker and real-time validation (.pdf, .docx, max 25MB).
+  - Document inventory displaying filename, file size, status badge, page count, and chunk count.
+  - Document preview modal with dual tabs: full Extracted Text view (with copy button) and Chunks & Traceability view (with page references, section titles, and character offsets).
+  - Secure original document downloads.
+  - Safe document deletion with confirmation dialog.
+  - Auto-polling status refresh when documents are being processed.
+
+---
+
+---
+
+## 4. Regulatory Knowledge Base & Legal Analyst AI Agent (Milestone 4)
+
+Compliance Sentinel implements a centralized **Regulatory Knowledge Base** and its first logical cognitive AI agent: the **Legal Analyst**.
+
+```mermaid
+flowchart TD
+    Doc["Authoritative Regulatory Document\n(PDF / DOCX Acts, Circulars, Standards)"] --> Storage["Local Storage Volume\n(/data/storage/regulatory/...)"]
+    Doc --> Chunker["PyMuPDF / docx Extraction\n+ Deterministic Chunker"]
+    Chunker --> Chunks["Regulatory Document Chunks\n(YugabyteDB: regulatory_document_chunks)"]
+
+    Chunks --> Agent["Legal Analyst AI Agent\n(Gemini 1.5 Flash via REST)"]
+    Agent --> Extractor["Structured Output Validation\n+ Exact Citation Verification"]
+    
+    Extractor --> RawReqs["Extracted Obligations\n(status: pending_review)"]
+    RawReqs --> Citation["RequirementSource\n(exact_excerpt, section, page, chunk_id)"]
+    
+    RawReqs --> HumanReview{"Human Review\n(Compliance Auditor)"}
+    HumanReview -->|Approve| Approved["Status: approved"]
+    HumanReview -->|Reject| Rejected["Status: rejected\n(Reason recorded)"]
+    HumanReview -->|Edit| Edited["Status: approved / pending\n(Field diff recorded)"]
+    HumanReview -->|Request Revision| Revision["Status: needs_revision"]
+    
+    HumanReview --> AuditTrail["RequirementAuditHistory\n(Full timestamped audit trail)"]
+    
+    Approved --> AuditMapping["Audit Requirement Mapping\n(AuditRequirement)"]
+    AuditMapping --> Evidence["Evidence Suggestion Engine\n(Keyword & scope matching against audit_documents)"]
+```
+
+### 4.1 Core Capabilities
+1. **Authoritative Ingestion**: Uploads official regulatory texts (PDF/DOCX) into isolated regulatory directories, extracting text, calculating SHA-256 hashes, and chunking with page and section references.
+2. **Legal Analyst Agent**:
+   - Asynchronous Google Gemini integration using strict structured JSON schemas (`response_mime_type="application/json"`).
+   - Strict anti-hallucination and evidence grounding prompts. Every requirement extracted MUST quote an exact, verbatim text excerpt.
+   - Built-in prompt injection defense: untrusted document texts containing prompt injection or jailbreak attempts are treated strictly as passive data.
+   - 21-category compliance taxonomy mapping (with "Other" fallback) and 5 obligation levels (`mandatory`, `conditional`, `recommended`, `informational`, `unclear`).
+3. **Human Review Workflow**:
+   - `Approve`: Confirms requirement for organization compliance auditing.
+   - `Reject`: Discards non-normative or erroneous items with mandatory justification.
+   - `Edit`: Modifies title, statement, category, or obligation level, recording before/after diffs.
+   - `Request Revision`: Flags requirement for refinement.
+   - Full immutable provenance in `RequirementAuditHistory`.
+4. **Audit Requirement Mapping & Evidence Suggestions**:
+   - Associates approved requirements with individual organization audits (`audit_requirements`).
+   - Tracks per-audit applicability status (`applicable`, `not_applicable`, `requires_review`).
+   - Suggests potentially relevant audit evidence documents (`audit_documents`) based on semantic keyword overlap.
+
+### 4.2 Regulatory Knowledge Base API Reference
+
+| Endpoint | Method | Role | Description |
+|---|---|---|---|
+| `/api/regulatory/frameworks` | `POST` | Any User | Register a new regulatory framework. |
+| `/api/regulatory/frameworks` | `GET` | Any User | List active regulatory frameworks. |
+| `/api/regulatory/frameworks/{id}/documents` | `POST` | Any User | Upload and process an authoritative PDF/DOCX regulatory document. |
+| `/api/regulatory/documents/{id}/chunks` | `GET` | Any User | Retrieve page-aware deterministic text chunks. |
+| `/api/regulatory/documents/{id}/extract` | `POST` | Any User | Trigger the Legal Analyst AI agent to extract obligations. |
+| `/api/regulatory/requirements` | `GET` | Any User | List extracted requirements with filtering (category, status, framework). |
+| `/api/regulatory/requirements/{id}/approve` | `POST` | Any User | Approve an extracted requirement. |
+| `/api/regulatory/requirements/{id}/reject` | `POST` | Any User | Reject requirement with mandatory justification. |
+| `/api/regulatory/requirements/{id}/edit` | `POST` | Any User | Edit requirement fields and record audit history. |
+| `/api/regulatory/requirements/{id}/history` | `GET` | Any User | Retrieve full change and review audit trail. |
+| `/api/organizations/{org_id}/audits/{audit_id}/requirements` | `POST` | Auditor+ | Map approved requirements to an audit. |
+| `/api/organizations/{org_id}/audits/{audit_id}/requirements` | `GET` | Member | List requirements mapped to an audit. |
+| `/api/organizations/{org_id}/audits/{audit_id}/requirements/{req_id}` | `PATCH` | Auditor+ | Update applicability status (`applicable`, `not_applicable`, `requires_review`). |
+| `/api/organizations/{org_id}/audits/{audit_id}/requirements/{req_id}/evidence-suggestions` | `GET` | Member | Retrieve suggested audit evidence documents matching the requirement. |
 
 ---
 
 ## 5. Automated Testing Suite
 
-All 21 backend unit, integration, and security test cases execute against the live YugabyteDB YSQL instance:
+All 34 backend unit, integration, and security test cases execute against the live YugabyteDB YSQL instance:
 
 ```bash
 # Run the complete test suite
 PYTHONPATH=backend backend/venv/bin/pytest backend/tests/ -v
 ```
 
-### Test Coverage Highlights:
-- **`test_auth_api.py`**:
+### Test Coverage Highlights (34/34 Passing):
+- **`test_regulatory_knowledge.py` (6 tests)**:
+  - Framework lifecycle (CRUD, constraints, defaults).
+  - Regulatory document upload (PDF/DOCX), extraction, and deterministic chunking in YugabyteDB.
+  - Legal Analyst extraction with `MockGeminiClient` (structured output, citations, provenance verification).
+  - Human review workflow (`approve`, `reject`, `edit`, `request_revision`, audit trail verification).
+  - Audit requirement mapping and evidence document suggestions.
+  - Multi-tenant and RBAC security isolation.
+- **`test_document_processing.py` (7 tests)**:
+  - PDF & DOCX extraction and scanned/image-only detection.
+  - Deterministic chunking, token limits, overlap, sequential indexing, and character offsets.
+  - Document API lifecycle (upload, list, filter, preview, chunks, download, soft delete).
+  - Multi-tenant isolation on audit documents.
+- **`test_auth_api.py` (6 tests)**:
   - Registration with Argon2id password verification.
   - Conflict handling for duplicate user registrations.
-  - Login credential validation, bad password rejection, inactive user block.
-  - `/api/auth/me` user profile and multi-tenant membership checks.
-  - Refresh token rotation and cryptographic reuse revocation.
-  - Logout cookie clearing and database session invalidation.
-- **`test_audit_api.py`**:
-  - Multi-tenant organization CRUD and slug generation.
-  - RBAC checks for owner, admin, auditor, analyst, and viewer roles.
+  - Login credential validation and inactive user block.
+  - Token refresh rotation and cryptographic revocation.
+- **`test_audit_api.py` (4 tests)**:
+  - Multi-tenant organization CRUD and RBAC checks.
   - Last-owner demotion & removal prevention guardrails.
-  - Audit case creation, filtering, searching, and pagination.
-  - Concurrent-safe incremental run number allocation (`run_number = 1, 2, ...`).
-  - Cross-tenant isolation verification (attempted cross-tenant access returns `404 Not Found`).
-- **`test_database_schema.py` & `test_tenant_isolation.py`**:
-  - 20-table schema verification.
+  - Audit case creation, filtering, and concurrent run number allocation.
+- **`test_database_schema.py` & `test_tenant_isolation.py` (11 tests)**:
+  - 27-table schema and relational constraint verification.
   - Composite foreign key constraint integrity.
   - Cross-tenant reference rejection by database triggers.
 
 ---
 
-## 6. Running with Docker Compose
+## 7. Running with Docker Compose
 
 ```bash
 # 1. Clone repository and copy environment template
