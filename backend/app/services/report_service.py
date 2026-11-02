@@ -30,13 +30,30 @@ from app.database.models.assessments import (
     Threat,
 )
 from app.database.models.audits import Audit
-from app.database.models.defence import DiscoveredControl
+from app.database.models.defence import (
+    ControlAuditHistory,
+    ControlEvidenceReference,
+    ControlRequirementMapping,
+    ControlThreatMapping,
+    DiscoveredControl,
+    FindingControl,
+)
 from app.database.models.documents import AuditDocument, DocumentChunk
-from app.database.models.findings import Finding
+from app.database.models.findings import EvidenceReference, Finding
 from app.database.models.identity import Organization
-from app.database.models.regulatory import AuditRequirement, RegulatoryFramework
+from app.database.models.regulatory import (
+    AuditRequirement,
+    RegulatoryDocument,
+    RegulatoryFramework,
+    RequirementSource,
+)
 from app.database.models.reports import Report
-from app.database.models.threats import AttackSurface, DiscoveredAsset
+from app.database.models.threats import (
+    AttackSurface,
+    DiscoveredAsset,
+    ThreatEvidenceReference,
+    ThreatRequirementMapping,
+)
 from app.schemas.reports import (
     ReadinessCheckItem,
     ReportCreateRequest,
@@ -419,14 +436,48 @@ class ReportService:
 
         audit = cls._verify_audit_exists(db, organization_id, audit_id)
 
-        # A. Ensure requirements are linked
+        # A. Ensure requirements are linked matching the audit's configured framework
+        audit_text = f"{audit.title} {audit.name or ''} {audit.description or ''}".lower()
+        target_fw = None
+        if "iso 27001" in audit_text or "iso-27001" in audit_text:
+            target_fw = db.scalars(
+                select(RegulatoryFramework)
+                .where(RegulatoryFramework.name.ilike("%ISO 27001%"))
+                .order_by(RegulatoryFramework.created_at.desc())
+            ).first()
+        elif "pci" in audit_text:
+            target_fw = db.scalars(
+                select(RegulatoryFramework)
+                .where(RegulatoryFramework.name.ilike("%PCI%"))
+                .order_by(RegulatoryFramework.created_at.desc())
+            ).first()
+        elif "soc 2" in audit_text or "soc2" in audit_text:
+            target_fw = db.scalars(
+                select(RegulatoryFramework)
+                .where(RegulatoryFramework.name.ilike("%SOC%"))
+                .order_by(RegulatoryFramework.created_at.desc())
+            ).first()
+
         existing_reqs = list(db.scalars(
             select(AuditRequirement).where(AuditRequirement.audit_id == audit_id)
         ).all())
         if not existing_reqs:
-            sample_reqs = list(db.scalars(
-                select(Requirement).where(Requirement.review_status == "approved")
-            ).all())[:5]
+            if target_fw:
+                sample_reqs = list(db.scalars(
+                    select(Requirement).where(
+                        Requirement.framework_id == target_fw.id,
+                        Requirement.review_status == "approved",
+                    )
+                ).all())[:5]
+                if not sample_reqs:
+                    sample_reqs = list(db.scalars(
+                        select(Requirement).where(Requirement.framework_id == target_fw.id)
+                    ).all())[:5]
+            else:
+                sample_reqs = list(db.scalars(
+                    select(Requirement).where(Requirement.review_status == "approved")
+                ).all())[:5]
+
             for r in sample_reqs:
                 db.add(AuditRequirement(
                     organization_id=organization_id,
@@ -552,65 +603,128 @@ class ReportService:
                 "created_at": d.created_at.strftime("%Y-%m-%d %H:%M UTC") if d.created_at else "",
             })
 
-        # B. Frameworks & Requirements
+        # B. Frameworks & Requirements (Canonical Deduplication & Framework Filtering)
+        audit_text = f"{audit.title} {audit.name or ''} {audit.description or ''}".lower()
+        configured_fw_keywords = []
+        if "iso 27001" in audit_text or "iso-27001" in audit_text:
+            configured_fw_keywords.append("iso")
+        elif "pci" in audit_text:
+            configured_fw_keywords.append("pci")
+        elif "soc" in audit_text:
+            configured_fw_keywords.append("soc")
+        elif "nist" in audit_text:
+            configured_fw_keywords.append("nist")
+        elif "dpdpa" in audit_text:
+            configured_fw_keywords.append("dpdpa")
+        elif "rbi" in audit_text:
+            configured_fw_keywords.append("rbi")
+
         audit_reqs = list(
             db.scalars(
                 select(AuditRequirement).where(AuditRequirement.audit_id == audit.id)
             ).all()
         )
+
         framework_names_set = set()
-        req_items = []
+        canonical_req_map: Dict[str, Dict[str, Any]] = {}
+
         for ar in audit_reqs:
             req: Optional[Requirement] = db.scalars(select(Requirement).where(Requirement.id == ar.requirement_id)).first()
             if not req:
                 continue
 
-            fw_name = "Standard"
+            fw = None
             if req.framework_id:
                 fw = db.scalars(select(RegulatoryFramework).where(RegulatoryFramework.id == req.framework_id)).first()
-                if fw:
-                    fw_name = fw.name
-                    framework_names_set.add(fw.name)
 
-            req_items.append({
-                "requirement_id": req.identifier or str(req.id)[:8],
-                "title": req.title or "Regulatory Requirement",
-                "statement": req.requirement_statement or req.description or "",
-                "framework_name": fw_name,
-                "obligation_type": req.obligation_type or "mandatory",
-                "applicability_status": ar.applicability_status or "applicable",
-                "human_review_status": req.review_status or "approved",
-                "id": str(req.id),
-            })
+            fw_name = fw.name if fw else (req.framework or "Standard")
+            fw_code = (fw.short_name if fw else (req.framework or "")).lower()
+            fw_ver = fw.version if fw else (req.framework_version or "1.0")
 
-        if not req_items and docs:
-            framework_names_set.add("System Architecture & Security Baseline")
-            for d in docs:
-                chunks = list(db.scalars(
-                    select(DocumentChunk)
-                    .where(DocumentChunk.audit_document_id == d.id)
-                    .order_by(DocumentChunk.chunk_index.asc())
+            # Scope / Framework Filter: If audit explicitly configured a target framework, exclude mismatches
+            if configured_fw_keywords:
+                matches_configured = any(kw in fw_name.lower() or kw in fw_code for kw in configured_fw_keywords)
+                if not matches_configured:
+                    continue
+
+            framework_names_set.add(fw_name)
+
+            # Canonical key: (normalized_fw, normalized_version, normalized_identifier)
+            norm_id = (req.identifier or req.requirement_code or req.title or str(req.id)[:8]).strip().upper()
+            norm_key = f"{fw_code}:{fw_ver}:{norm_id}"
+
+            # Query requirement sources / citations
+            req_sources = list(db.scalars(select(RequirementSource).where(RequirementSource.requirement_id == req.id)).all())
+            citations = []
+            for rs in req_sources:
+                reg_doc = db.scalars(select(RegulatoryDocument).where(RegulatoryDocument.id == rs.regulatory_document_id)).first() if rs.regulatory_document_id else None
+                doc_title = getattr(reg_doc, "title", rs.section_reference or "Regulatory Standard")
+                citations.append({
+                    "source_agent": "Legal Analyst",
+                    "exact_excerpt": rs.exact_excerpt,
+                    "filename": doc_title,
+                    "page_number": rs.page_number or 1,
+                    "section": rs.section_reference or "",
+                })
+
+            if norm_key in canonical_req_map:
+                # Merge multiple sources & underlying IDs
+                existing = canonical_req_map[norm_key]
+                existing["all_ids"].append(str(req.id))
+                for c in citations:
+                    if not any(ec.get("exact_excerpt") == c["exact_excerpt"] for ec in existing["citations"]):
+                        existing["citations"].append(c)
+            else:
+                canonical_req_map[norm_key] = {
+                    "requirement_id": norm_id,
+                    "title": req.title or "Regulatory Requirement",
+                    "statement": req.requirement_statement or req.description or "",
+                    "framework_name": fw_name,
+                    "framework_version": fw_ver,
+                    "obligation_type": req.obligation_type or "mandatory",
+                    "applicability_status": ar.applicability_status or "applicable",
+                    "human_review_status": req.review_status or "approved",
+                    "id": str(req.id),
+                    "all_ids": [str(req.id)],
+                    "citations": citations,
+                }
+
+        req_items = list(canonical_req_map.values())
+
+        if not req_items and configured_fw_keywords:
+            # Fallback: Query approved requirements for the configured framework
+            matching_fws = list(db.scalars(
+                select(RegulatoryFramework).where(
+                    func.lower(RegulatoryFramework.name).ilike(f"%{configured_fw_keywords[0]}%")
+                )
+            ).all())
+            for mfw in matching_fws:
+                fw_reqs = list(db.scalars(
+                    select(Requirement).where(Requirement.framework_id == mfw.id)
                 ).all())
-                fname = getattr(d, "file_name", getattr(d, "original_filename", "Audit Document"))
-                for idx, ch in enumerate(chunks):
-                    p_start = ch.page_start or ch.page_number or (idx + 1)
-                    title_excerpt = (ch.section_title or ch.content[:50].replace("\n", " ").strip())
-                    req_items.append({
-                        "requirement_id": f"REQ-{idx+1:02d}",
-                        "title": f"Security Requirement: {title_excerpt[:45]}",
-                        "statement": ch.content[:240].strip() + ("..." if len(ch.content) > 240 else ""),
-                        "framework_name": "System Architecture & Security Baseline",
-                        "obligation_type": "mandatory",
-                        "applicability_status": "applicable",
-                        "human_review_status": "approved",
-                        "id": str(ch.id),
-                        "citations": [{
-                            "source_agent": "Legal Analyst",
-                            "exact_excerpt": ch.content[:150].strip(),
-                            "filename": fname,
-                            "page_number": p_start,
-                        }],
-                    })
+                for fr in fw_reqs:
+                    norm_id = (fr.identifier or fr.title).strip().upper()
+                    norm_key = f"{mfw.short_name}:{mfw.version}:{norm_id}"
+                    if norm_key not in canonical_req_map:
+                        framework_names_set.add(mfw.name)
+                        canonical_req_map[norm_key] = {
+                            "requirement_id": norm_id,
+                            "title": fr.title or "Regulatory Requirement",
+                            "statement": fr.requirement_statement or fr.description or "",
+                            "framework_name": mfw.name,
+                            "framework_version": mfw.version,
+                            "obligation_type": fr.obligation_type or "mandatory",
+                            "applicability_status": "applicable",
+                            "human_review_status": fr.review_status or "approved",
+                            "id": str(fr.id),
+                            "all_ids": [str(fr.id)],
+                            "citations": [],
+                        }
+                        if len(canonical_req_map) >= 5:
+                            break
+                if len(canonical_req_map) >= 5:
+                    break
+            req_items = list(canonical_req_map.values())
 
         # C. Adjudication Decisions
         decisions = list(
@@ -628,7 +742,7 @@ class ReportService:
             if key:
                 decisions_by_target[key] = d
 
-        # D. Discovered Controls
+        # D. Discovered Controls (Fully Wired with Evidence, Mappings, Assessments, and Review History)
         controls = list(
             db.scalars(
                 select(DiscoveredControl).where(
@@ -639,47 +753,81 @@ class ReportService:
         )
         control_items = []
         for c in controls:
+            # Query evidence references
+            cer_list = list(db.scalars(
+                select(ControlEvidenceReference)
+                .where(ControlEvidenceReference.control_id == c.id)
+                .order_by(ControlEvidenceReference.created_at.asc())
+            ).all())
+            citations = []
+            for cer in cer_list:
+                doc = db.scalars(select(AuditDocument).where(AuditDocument.id == cer.audit_document_id)).first() if cer.audit_document_id else None
+                fname = cer.original_filename or (doc.file_name if doc else "Audit Evidence Document")
+                citations.append({
+                    "source_agent": "Defence Auditor",
+                    "exact_excerpt": cer.exact_excerpt,
+                    "filename": fname,
+                    "page_number": cer.page_number or 1,
+                    "section": cer.section_title or "",
+                    "evidence_maturity": cer.evidence_maturity or c.evidence_maturity,
+                })
+
+            # Query requirement mappings
+            crm_list = list(db.scalars(
+                select(ControlRequirementMapping).where(ControlRequirementMapping.control_id == c.id)
+            ).all())
+            related_reqs = []
+            for crm in crm_list:
+                r_obj = db.scalars(select(Requirement).where(Requirement.id == crm.requirement_id)).first()
+                if r_obj:
+                    related_reqs.append(r_obj.identifier or r_obj.title)
+
+            # Query threat mappings
+            ctm_list = list(db.scalars(
+                select(ControlThreatMapping).where(ControlThreatMapping.control_id == c.id)
+            ).all())
+            related_threats = []
+            for ctm in ctm_list:
+                t_obj = db.scalars(select(Threat).where(Threat.id == ctm.threat_id)).first()
+                if t_obj:
+                    related_threats.append(t_obj.threat_id_code or t_obj.title)
+
+            # Determine human review status
+            c_hist = list(db.scalars(
+                select(ControlAuditHistory).where(ControlAuditHistory.control_id == c.id)
+            ).all())
+            if any(h.review_status == "approved" for h in c_hist):
+                hr_status = "approved"
+            elif any(h.review_status == "rejected" for h in c_hist):
+                hr_status = "rejected"
+            else:
+                hr_status = "pending_review"
+
+            # Strict implementation status: Never classify a planned control as implemented
+            is_planned = c.operational_status == "planned" or "planned" in (c.name.lower() + " " + c.description.lower())
+            if is_planned:
+                impl_status = "undocumented" if c.implementation_status == "implemented" else c.implementation_status
+            else:
+                impl_status = c.implementation_status or "documented"
+
+            # Assessment outcome
+            ca = db.scalars(select(ControlAssessment).where(ControlAssessment.control_id == c.id)).first()
+            assessment_outcome = ca.status if ca else impl_status
+
             control_items.append({
                 "control_id": c.control_code or str(c.id)[:8],
-                "title": c.name or "Control",
+                "title": c.name or "Discovered Control",
                 "control_description": c.description or c.control_objective or "",
                 "evidence_maturity": c.evidence_maturity or "policy",
-                "implementation_status": c.implementation_status or "documented",
-                "human_review_status": "approved",
-                "related_requirements": [],
-                "related_threats": [],
-                "citations": [],
+                "implementation_status": impl_status,
+                "assessment_outcome": assessment_outcome,
+                "human_review_status": hr_status,
+                "related_requirements": related_reqs,
+                "related_threats": related_threats,
+                "citations": citations,
             })
 
-        if not control_items and docs:
-            for d in docs:
-                chunks = list(db.scalars(
-                    select(DocumentChunk)
-                    .where(DocumentChunk.audit_document_id == d.id)
-                    .order_by(DocumentChunk.chunk_index.asc())
-                ).all())
-                fname = getattr(d, "file_name", getattr(d, "original_filename", "Audit Document"))
-                for idx, ch in enumerate(chunks):
-                    p_start = ch.page_start or ch.page_number or (idx + 1)
-                    title_excerpt = (ch.section_title or ch.content[:50].replace("\n", " ").strip())
-                    control_items.append({
-                        "control_id": f"CTRL-{idx+1:02d}",
-                        "title": f"Documented Control: {title_excerpt[:40]}",
-                        "control_description": ch.content[:200].strip(),
-                        "evidence_maturity": "documented",
-                        "implementation_status": "implemented",
-                        "human_review_status": "approved",
-                        "related_requirements": [f"REQ-{idx+1:02d}"],
-                        "related_threats": [f"THR-{idx+1:02d}"],
-                        "citations": [{
-                            "source_agent": "Defence Auditor",
-                            "exact_excerpt": ch.content[:120].strip(),
-                            "filename": fname,
-                            "page_number": p_start,
-                        }],
-                    })
-
-        # E. Threat Scenarios
+        # E. Threat Scenarios (Fully Wired with Evidence, Citations, Controls, and Decisions)
         threats = list(
             db.scalars(
                 select(Threat).where(
@@ -693,6 +841,44 @@ class ReportService:
             t_dec = decisions_by_target.get(str(t.id))
             outcome = getattr(t_dec, "outcome_status", getattr(t_dec, "adjudication_status", "insufficient_mitigation_evidence"))
             conf = float(t_dec.confidence_score if t_dec and t_dec.confidence_score is not None else 0.50)
+
+            # Query threat citations
+            ter_list = list(db.scalars(
+                select(ThreatEvidenceReference)
+                .where(ThreatEvidenceReference.threat_id == t.id)
+                .order_by(ThreatEvidenceReference.created_at.asc())
+            ).all())
+            t_citations = []
+            for ter in ter_list:
+                doc = db.scalars(select(AuditDocument).where(AuditDocument.id == ter.audit_document_id)).first() if ter.audit_document_id else None
+                fname = ter.original_filename or (doc.file_name if doc else "Audit Evidence Document")
+                t_citations.append({
+                    "source_agent": "Adversarial Strategist",
+                    "exact_excerpt": ter.exact_excerpt,
+                    "filename": fname,
+                    "page_number": ter.page_number or 1,
+                    "section": ter.section_title or "",
+                })
+
+            # Query related controls
+            ctm_list = list(db.scalars(
+                select(ControlThreatMapping).where(ControlThreatMapping.threat_id == t.id)
+            ).all())
+            t_ctrls = []
+            for ctm in ctm_list:
+                ctrl_obj = db.scalars(select(DiscoveredControl).where(DiscoveredControl.id == ctm.control_id)).first()
+                if ctrl_obj:
+                    t_ctrls.append(ctrl_obj.control_code or ctrl_obj.name)
+
+            # Query related requirements
+            trm_list = list(db.scalars(
+                select(ThreatRequirementMapping).where(ThreatRequirementMapping.threat_id == t.id)
+            ).all())
+            t_reqs = []
+            for trm in trm_list:
+                r_obj = db.scalars(select(Requirement).where(Requirement.id == trm.requirement_id)).first()
+                if r_obj:
+                    t_reqs.append(r_obj.identifier or r_obj.title)
 
             threat_items.append({
                 "threat_id": t.threat_id_code or str(t.id)[:8],
@@ -708,31 +894,10 @@ class ReportService:
                 "is_stale": t_dec.is_stale if t_dec else False,
                 "adjudication_outcome": outcome,
                 "confidence_score": conf,
-                "citations": [],
-                "related_controls": [],
+                "citations": t_citations,
+                "related_controls": t_ctrls,
+                "related_requirements": t_reqs,
             })
-
-        if not threat_items and docs:
-            stride_cats = ["Spoofing", "Tampering", "Repudiation", "Information Disclosure", "Denial of Service", "Elevation of Privilege"]
-            for idx in range(min(4, max(2, len(req_items)))):
-                sc = stride_cats[idx % len(stride_cats)]
-                threat_items.append({
-                    "threat_id": f"THR-{idx+1:02d}",
-                    "title": f"Threat Scenario {idx+1}: {sc} vector",
-                    "description": f"Potential {sc.lower()} vector identified in architecture evidence and operational components.",
-                    "stride_category": sc,
-                    "threat_category": "Adversarial Attack Path",
-                    "likelihood": 3,
-                    "impact": 3,
-                    "risk_score": 9,
-                    "severity": "medium",
-                    "is_provisional": False,
-                    "is_stale": False,
-                    "adjudication_outcome": "documented_mitigations_supported",
-                    "confidence_score": 0.85,
-                    "citations": [],
-                    "related_controls": [f"CTRL-{idx+1:02d}"] if len(control_items) > idx else [],
-                })
 
         # F. Assets & Attack Surfaces
         assets = list(db.scalars(select(DiscoveredAsset).where(DiscoveredAsset.audit_id == audit.id)).all())
@@ -747,31 +912,6 @@ class ReportService:
             }
             for a in assets
         ]
-        if not asset_items and docs:
-            asset_items.append({
-                "asset_id": "AST-01",
-                "name": "Customer Profile & Authentication Service",
-                "asset_type": "Microservice",
-                "description": "Handles customer registration, session authorization, and credentials.",
-                "criticality": "high",
-                "trust_boundary": "DMZ / Application Layer",
-            })
-            asset_items.append({
-                "asset_id": "AST-02",
-                "name": "Order Management & Transaction Relational Store",
-                "asset_type": "Database",
-                "description": "Stores order records, delivery addresses, and payment transaction metadata.",
-                "criticality": "critical",
-                "trust_boundary": "Internal Data Layer",
-            })
-            asset_items.append({
-                "asset_id": "AST-03",
-                "name": "Cloud Object Storage & Backup Repository",
-                "asset_type": "Storage",
-                "description": "Retains database backups, static assets, and archival snapshots.",
-                "criticality": "high",
-                "trust_boundary": "Cloud Infrastructure",
-            })
 
         surfaces = list(db.scalars(select(AttackSurface).where(AttackSurface.audit_id == audit.id)).all())
         surface_items = [
@@ -785,17 +925,8 @@ class ReportService:
             }
             for s in surfaces
         ]
-        if not surface_items and docs:
-            surface_items.append({
-                "surface_id": "SRF-01",
-                "surface_name": "Public Web & Ingress API Gateway",
-                "entry_point": "https://api.shopsphere.com",
-                "protocol": "HTTPS",
-                "authentication_required": True,
-                "trust_boundary": "Public Internet to Internal VPC",
-            })
 
-        # G. Findings
+        # G. Findings (Rigorous Classification and Grounded Citations)
         findings = list(
             db.scalars(
                 select(Finding).where(
@@ -804,8 +935,66 @@ class ReportService:
                 )
             ).all()
         )
-        finding_items = [
-            {
+        finding_items = []
+        for f in findings:
+            raw_state = (f.evidence_state or f.finding_category or "").lower()
+            if "contra" in raw_state:
+                f_class = "contradictory_evidence"
+                class_label = "Contradictory Evidence"
+            elif "insufficient" in raw_state or "gap" in raw_state or "missing" in raw_state or "operational_evidence" in raw_state:
+                f_class = "insufficient_evidence"
+                class_label = "Insufficient Evidence"
+            elif "policy" in raw_state or "documentation" in raw_state:
+                f_class = "documentation_gap"
+                class_label = "Documentation Gap"
+            elif "threat" in raw_state:
+                f_class = "potential_threat"
+                class_label = "Potential Threat"
+            elif "confirmed" in raw_state:
+                f_class = "confirmed_technical_weakness"
+                class_label = "Confirmed Technical Weakness"
+            else:
+                f_class = "documented_weakness"
+                class_label = "Documented Weakness"
+
+            # Query linked controls
+            fc_list = list(db.scalars(
+                select(FindingControl).where(FindingControl.finding_id == f.id)
+            ).all())
+            f_ctrls = []
+            f_citations = []
+            for fc in fc_list:
+                ctrl_obj = db.scalars(select(DiscoveredControl).where(DiscoveredControl.id == fc.control_id)).first()
+                if ctrl_obj:
+                    f_ctrls.append(ctrl_obj.control_code or ctrl_obj.name)
+                    # Inherit citations if direct references are absent
+                    c_refs = list(db.scalars(
+                        select(ControlEvidenceReference).where(ControlEvidenceReference.control_id == ctrl_obj.id)
+                    ).all())
+                    for cr in c_refs:
+                        f_citations.append({
+                            "source_agent": "Defence Auditor",
+                            "exact_excerpt": cr.exact_excerpt,
+                            "filename": cr.original_filename or "Audit Evidence Document",
+                            "page_number": cr.page_number or 1,
+                            "section": cr.section_title or "",
+                        })
+
+            # Check direct evidence references
+            ev_refs = list(db.scalars(
+                select(EvidenceReference).where(EvidenceReference.finding_id == f.id)
+            ).all())
+            for ev in ev_refs:
+                doc = db.scalars(select(AuditDocument).where(AuditDocument.id == ev.document_id)).first() if ev.document_id else None
+                f_citations.append({
+                    "source_agent": "Defence Auditor",
+                    "exact_excerpt": ev.supporting_passage,
+                    "filename": doc.file_name if doc else "Audit Evidence Document",
+                    "page_number": ev.page_number or 1,
+                    "section": "",
+                })
+
+            finding_items.append({
                 "finding_id": f.finding_code or str(f.id)[:8],
                 "title": f.title,
                 "description": f.description,
@@ -813,33 +1002,12 @@ class ReportService:
                 "risk_score": f.risk_score or 5,
                 "likelihood": getattr(f, "likelihood_score", getattr(f, "likelihood", 2)),
                 "impact": getattr(f, "impact_score", getattr(f, "impact", 3)),
-                "recommended_corrective_action": f.remediation_recommendation or "Implement verified technical controls.",
-                "review_status": f.review_status or "confirmed",
-            }
-            for f in findings
-        ]
-        if not finding_items and docs:
-            finding_items.append({
-                "finding_id": "FIND-01",
-                "title": "Conflicting Database Backup Frequency Documentation",
-                "description": "Evidence documents contain conflicting statements regarding backup periodicity (daily vs weekly), requiring operational policy synchronization.",
-                "severity": "medium",
-                "risk_score": 8,
-                "likelihood": 2,
-                "impact": 4,
-                "recommended_corrective_action": "Formalize automated backup schedule in code and configure cross-region replication alerts.",
-                "review_status": "confirmed",
-            })
-            finding_items.append({
-                "finding_id": "FIND-02",
-                "title": "Perimeter Ingress Firewall Rules Not Fully Codified",
-                "description": "Documented network architecture indicates production ingress rules are pending formal policy documentation.",
-                "severity": "low",
-                "risk_score": 4,
-                "likelihood": 2,
-                "impact": 2,
-                "recommended_corrective_action": "Codify all security group ingress/egress rules in Infrastructure-as-Code (Terraform).",
-                "review_status": "confirmed",
+                "finding_classification": f_class,
+                "classification_label": class_label,
+                "recommended_corrective_action": f.remediation_recommendation or "Implement verified technical safeguards.",
+                "review_status": f.review_status or "pending_review",
+                "linked_controls": f_ctrls,
+                "citations": f_citations[:3],
             })
 
         # H. Contradictions
@@ -867,47 +1035,42 @@ class ReportService:
                 "resolution_notes": c.resolution_notes,
             })
 
-        if not contradiction_items and docs:
-            contradiction_items.append({
-                "contradiction_id": "CONTRA-01",
-                "contradiction_type": "evidence_vs_documentation",
-                "description": "Backup frequency discrepancy detected between development notes and architecture specification.",
-                "claim_a": "Development notes state backups are performed weekly.",
-                "claim_b": "Architecture specification specifies automated daily snapshots to cloud storage.",
-                "severity": "medium",
-                "resolution_status": "under_investigation",
-                "resolution_notes": "Awaiting operational verification of actual cloud storage snapshot cron jobs.",
-            })
-
-        # Map Adjudication Decisions to Requirements
+        # Map Adjudication Decisions to Canonical Requirements
         supported_reqs = 0
         partially_supported_reqs = 0
         nonconformance_reqs = 0
 
         for r in req_items:
-            r_dec = decisions_by_target.get(r["id"])
+            # Match decision by any ID in r["all_ids"]
+            r_dec = None
+            for req_uuid in r.get("all_ids", [r["id"]]):
+                if req_uuid in decisions_by_target:
+                    r_dec = decisions_by_target[req_uuid]
+                    break
+
             if r_dec:
                 r["adjudication_outcome"] = getattr(r_dec, "outcome_status", getattr(r_dec, "adjudication_status", "supported_by_documented_evidence"))
                 r["confidence_score"] = float(r_dec.confidence_score if r_dec.confidence_score is not None else 0.85)
-                r["is_provisional"] = getattr(r_dec, "is_provisional", getattr(r_dec, "provisional", False))
+                r["is_provisional"] = getattr(r_dec, "is_provisional", False)
                 r["is_stale"] = bool(r_dec.is_stale)
+                r["confidence_explanation"] = (r_dec.decision_metadata or {}).get("confidence_explanation", "")
+
                 # Extract sources
                 srcs = list(db.scalars(select(AdjudicationSource).where(AdjudicationSource.decision_id == r_dec.id)).all())
-                r["citations"] = [
-                    {
+                for s in srcs:
+                    r["citations"].append({
                         "source_agent": s.source_agent,
                         "exact_excerpt": getattr(s, "exact_excerpt", getattr(s, "claim_statement", "")),
                         "filename": getattr(s, "citation_reference", "Audit Evidence Document") or "Audit Evidence Document",
                         "page_number": getattr(s, "page_number", 1) or 1,
-                    }
-                    for s in srcs
-                ]
+                        "section": "",
+                    })
             else:
                 r["adjudication_outcome"] = "supported_by_documented_evidence" if controls else "insufficient_evidence"
                 r["confidence_score"] = 0.80 if controls else 0.40
                 r["is_provisional"] = False
                 r["is_stale"] = False
-                r["citations"] = []
+                r["confidence_explanation"] = "Adjudication outcome inferred from discovered controls and evidence presence."
 
             outcome = r["adjudication_outcome"]
             if outcome == "supported_by_documented_evidence":
@@ -917,15 +1080,15 @@ class ReportService:
             elif outcome in ("documented_nonconformance", "contradictory_evidence"):
                 nonconformance_reqs += 1
 
+        total_reqs = len(req_items)
+        insufficient_reqs = max(0, total_reqs - (supported_reqs + partially_supported_reqs + nonconformance_reqs))
+
         mitigated_threats = sum(1 for t in threat_items if t["adjudication_outcome"] == "documented_mitigations_supported")
         unmitigated_threats = len(threat_items) - mitigated_threats
 
-        avg_conf = round(
-            float(sum(float(d.confidence_score or 0.5) for d in decisions) / len(decisions))
-            if decisions
-            else (0.80 if controls else 0.50),
-            2,
-        )
+        all_confs = [r["confidence_score"] for r in req_items if r.get("confidence_score") is not None] + \
+                    [t["confidence_score"] for t in threat_items if t.get("confidence_score") is not None]
+        avg_conf = round(float(sum(all_confs) / len(all_confs)), 2) if all_confs else (0.80 if controls else 0.50)
 
         # Build Remediation Roadmap from Findings & Threats
         remediation_items = []
@@ -971,6 +1134,8 @@ class ReportService:
 
         now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
+        env_display = audit.environment if (audit.environment and audit.environment.strip()) else "Not specified"
+
         structured_data = {
             "cover_page": {
                 "organization_name": org_name,
@@ -981,40 +1146,45 @@ class ReportService:
                 "report_version": report_version,
                 "generated_at": now_str,
                 "target_system": audit.target_system or audit.application_name or "Target System",
-                "environment": audit.environment or "production",
+                "environment": env_display,
                 "report_status": "completed",
-                "framework_names": list(framework_names_set) if framework_names_set else ["PCI-DSS / SOC 2"],
+                "framework_names": list(framework_names_set) if framework_names_set else ["ISO 27001:2022"],
                 "is_stale": has_stale,
             },
             "executive_summary": {
                 "narrative": (
-                    f"Comprehensive security posture and compliance audit executed for {audit.target_system or audit.title} ({audit.environment or 'production'}). "
-                    f"Reconciliation arbitrated {len(req_items)} regulatory requirements, {len(control_items)} discovered safeguards, "
+                    f"Comprehensive security posture and compliance audit executed for {audit.target_system or audit.title} ({env_display}). "
+                    f"Reconciliation arbitrated {len(req_items)} canonical regulatory requirements, {len(control_items)} discovered safeguards, "
                     f"and {len(threat_items)} modeled STRIDE threat paths with an average adjudication confidence score of {int(avg_conf * 100)}%."
                 ),
                 "total_requirements_assessed": len(req_items),
                 "supported_requirements_count": supported_reqs,
                 "partially_supported_count": partially_supported_reqs,
                 "nonconformance_count": nonconformance_reqs,
+                "insufficient_evidence_count": insufficient_reqs,
                 "total_controls_documented": len(control_items),
                 "total_threats_modeled": len(threat_items),
                 "mitigated_threats_count": mitigated_threats,
                 "unmitigated_threats_count": unmitigated_threats,
                 "total_findings_count": len(finding_items),
                 "critical_findings_count": sum(1 for f in finding_items if f["severity"] == "critical"),
-                "high_findings_count": sum(1 for f in finding_items if f["severity"] == "high"),
+                "high_findings_count": sum(1 for f in finding_items if f["severity"] in ("high", "very_high")),
                 "unresolved_contradictions_count": sum(1 for c in contradiction_items if c["resolution_status"] != "resolved"),
-                "pending_human_reviews_count": sum(1 for d in decisions if d.review_status == "pending"),
+                "pending_human_reviews_count": (
+                    sum(1 for d in decisions if d.review_status == "pending") +
+                    sum(1 for c in control_items if c["human_review_status"] == "pending_review") +
+                    sum(1 for f in finding_items if f["review_status"] == "pending_review")
+                ),
                 "stale_decisions_count": sum(1 for d in decisions if d.is_stale),
                 "average_confidence_score": avg_conf,
                 "evidence_limitations": evidence_limitations,
             },
             "scope_and_methodology": {
                 "target_system": audit.target_system or audit.application_name or "Target System",
-                "environment": audit.environment or "production",
+                "environment": env_display,
                 "audit_scope_description": audit.description or "Automated multi-agent compliance gap assessment.",
                 "uploaded_documents": doc_meta_list,
-                "regulatory_frameworks": [{"name": fn} for fn in framework_names_set] if framework_names_set else [{"name": "PCI-DSS v4.0"}],
+                "regulatory_frameworks": [{"name": fn} for fn in framework_names_set] if framework_names_set else [{"name": "ISO 27001:2022"}],
                 "agents_involved": [
                     {"name": "Legal Analyst", "role": "Regulatory requirement extraction & obligation mapping"},
                     {"name": "Adversarial Strategist", "role": "STRIDE threat modeling & attack path generation"},

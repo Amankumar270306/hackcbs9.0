@@ -48,44 +48,76 @@ def compute_deterministic_confidence(
     is_pending_threat: bool = False,
     missing_agent_data: bool = False,
     is_human_reviewed: bool = False,
-) -> float:
-    """Calculates deterministic confidence score for an adjudication decision based on strict evidentiary constraints."""
+    return_explanation: bool = False,
+) -> Any:
+    """Calculates deterministic confidence score for an adjudication decision based on strict evidentiary constraints.
+    
+    Prevents repeated penalties for the same underlying issue and generates a verifiable audit explanation.
+    """
     # Base score derived from evidence maturity
     maturity = (evidence_maturity or "policy").lower()
+    explanation_parts = []
     if maturity == "operational":
         base_score = 0.90
+        explanation_parts.append("Base operational telemetry maturity (0.90)")
     elif maturity == "implementation":
         base_score = 0.80
+        explanation_parts.append("Base technical implementation maturity (0.80)")
     elif maturity == "design":
         base_score = 0.65
+        explanation_parts.append("Base architecture/design specification maturity (0.65)")
     elif maturity == "policy":
         base_score = 0.50
+        explanation_parts.append("Base organizational policy maturity (0.50)")
     else:
         base_score = 0.40
+        explanation_parts.append("Unspecified baseline maturity (0.40)")
 
     # Adjust for outcome status
     outcome = (outcome_status or "").lower()
     if outcome in ("insufficient_evidence", "insufficient_mitigation_evidence"):
         base_score = min(base_score, 0.40)
+        explanation_parts.append("capped at 0.40 due to insufficient evidence")
     elif outcome in ("contradictory_evidence", "requires_human_review"):
         base_score = min(base_score, 0.45)
+        explanation_parts.append("capped at 0.45 due to evidence contradictions / review required")
+    elif outcome in ("partially_supported", "partially_mitigated"):
+        base_score = min(base_score, 0.55)
+        explanation_parts.append("adjusted to 0.55 for partial evidence coverage")
+    elif outcome in ("supported_by_documented_evidence", "documented_mitigations_supported"):
+        explanation_parts.append("directly supported by verified evidence")
 
-    # Penalties
+    # Specific penalties
     if has_invalid_citations:
         base_score -= 0.25
+        explanation_parts.append("-0.25 citation validation discrepancy penalty")
     if has_contradictions:
         base_score -= 0.20
+        explanation_parts.append("-0.20 cross-agent contradiction penalty")
+    
+    # Missing upstream agent data: only penalize if outcome has not already been capped for missing evidence
     if missing_agent_data:
-        base_score = min(base_score - 0.15, 0.60)
+        if outcome not in ("insufficient_evidence", "insufficient_mitigation_evidence"):
+            base_score = min(base_score - 0.15, 0.60)
+            explanation_parts.append("-0.15 missing upstream agent data penalty")
+        else:
+            explanation_parts.append("missing agent data already reflected in insufficient evidence cap")
+
     if is_pending_threat:
         base_score = min(base_score, 0.70)
+        explanation_parts.append("capped at 0.70 for provisional threat model")
 
     # Bonus for human-approved source
     if is_human_reviewed:
         base_score += 0.05
+        explanation_parts.append("+0.05 human auditor verification bonus")
 
-    # Clamp between 0.10 and 0.98
-    return round(max(0.10, min(0.98, float(base_score))), 2)
+    final_score = round(max(0.10, min(0.98, float(base_score))), 2)
+    explanation = f"{'; '.join(explanation_parts)}; final confidence score: {int(final_score * 100)}%"
+
+    if return_explanation:
+        return final_score, explanation
+    return final_score
 
 
 class AdjudicatorPipeline:
@@ -446,11 +478,25 @@ class AdjudicatorPipeline:
                         chunk_obj = chunk_lookup[s_item.chunk_id]
                         # Verify excerpt against chunk content
                         if s_item.exact_excerpt and s_item.exact_excerpt.strip():
-                            sub = s_item.exact_excerpt.strip().lower()[:60]
+                            sub = s_item.exact_excerpt.strip().lower()[:50]
                             if sub not in chunk_obj.content.lower():
                                 is_valid = False
                                 has_invalid_cite = True
                                 notes = "Excerpt not found verbatim in cited document chunk."
+                    elif s_item.exact_excerpt and s_item.exact_excerpt.strip():
+                        # Search chunks for the excerpt
+                        sub = s_item.exact_excerpt.strip().lower()[:40]
+                        for ch in chunks:
+                            c_text = getattr(ch, "content", getattr(ch, "chunk_text", ""))
+                            if sub in c_text.lower():
+                                chunk_obj = ch
+                                is_valid = True
+                                notes = "Matched chunk via verbatim excerpt search."
+                                break
+                        if not chunk_obj and s_item.chunk_id:
+                            is_valid = False
+                            has_invalid_cite = True
+                            notes = f"Referenced chunk {s_item.chunk_id} not found in audit documents."
                     elif s_item.chunk_id:
                         is_valid = False
                         has_invalid_cite = True
@@ -465,6 +511,13 @@ class AdjudicatorPipeline:
                             pass
                     elif related_id:
                         s_ent_id = related_id
+
+                    # Resolve resolved page number safely from page_start or page_number
+                    resolved_page = 1
+                    if chunk_obj:
+                        resolved_page = chunk_obj.page_start or chunk_obj.page_number or 1
+                    elif s_item.page_number:
+                        resolved_page = s_item.page_number
 
                     source_m = AdjudicationSource(
                         organization_id=run.organization_id,
@@ -481,7 +534,7 @@ class AdjudicatorPipeline:
                         exact_excerpt=s_item.exact_excerpt,
                         chunk_id=chunk_obj.id if chunk_obj else None,
                         document_id=chunk_obj.audit_document_id if chunk_obj else None,
-                        page_number=chunk_obj.page_number if chunk_obj else s_item.page_number,
+                        page_number=resolved_page,
                         section_heading=chunk_obj.section_title if chunk_obj else s_item.section_heading,
                         is_citation_valid=is_valid,
                         citation_validation_notes=notes,
@@ -489,7 +542,7 @@ class AdjudicatorPipeline:
                     source_models.append(source_m)
 
                 # Deterministic confidence computation
-                conf = compute_deterministic_confidence(
+                conf, conf_explanation = compute_deterministic_confidence(
                     evidence_maturity=ev_maturity,
                     outcome_status=dec_item.outcome_status,
                     has_invalid_citations=has_invalid_cite,
@@ -497,6 +550,7 @@ class AdjudicatorPipeline:
                     is_pending_threat=is_prov,
                     missing_agent_data=len(missing_agents) > 0,
                     is_human_reviewed=False,
+                    return_explanation=True,
                 )
 
                 decision_m = AdjudicationDecision(
@@ -523,6 +577,7 @@ class AdjudicatorPipeline:
                     recommended_action=dec_item.recommended_action,
                     review_status="pending_review",
                     decision_metadata={
+                        "confidence_explanation": conf_explanation,
                         "missing_agents": missing_agents,
                         "invalid_citations_detected": has_invalid_cite,
                     },

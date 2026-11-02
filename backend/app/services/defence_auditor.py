@@ -164,7 +164,7 @@ class DefenceAuditorService:
                     "id": str(c.id),
                     "document_id": str(c.document_id),
                     "filename": doc_map.get(c.document_id, "document"),
-                    "page_number": c.page_number,
+                    "page_number": c.page_start or c.page_number or 1,
                     "section_title": c.section_title,
                     "content": getattr(c, "content", getattr(c, "chunk_text", "")),
                 })
@@ -275,7 +275,7 @@ class DefenceAuditorService:
                         audit_document_id=doc_id,
                         document_chunk_id=matched_chunk.id if matched_chunk else None,
                         original_filename=doc_filename,
-                        page_number=citation.page_number or (matched_chunk.page_number if matched_chunk else None),
+                        page_number=citation.page_number or (matched_chunk.page_start if matched_chunk and getattr(matched_chunk, "page_start", None) is not None else (matched_chunk.page_number if matched_chunk else None)) or 1,
                         section_title=citation.section_title or (matched_chunk.section_title if matched_chunk else None),
                         exact_excerpt=citation.exact_excerpt or "Documented control safeguard in provided evidence.",
                         citation_type=cit_type,
@@ -418,6 +418,15 @@ class DefenceAuditorService:
                     finding_item.impact_score,
                 )
 
+                # Distinguish documentation gaps and contradictions from confirmed technical weaknesses
+                ev_state = finding_item.evidence_state
+                if category in ("documentation_gap", "implementation_evidence_gap", "operational_evidence_gap"):
+                    ev_state = "insufficient_evidence"
+                elif category == "contradictory_evidence":
+                    ev_state = "contradictory_evidence"
+                elif ev_state not in ("confirmed_weakness", "insufficient_evidence", "contradictory_evidence"):
+                    ev_state = "insufficient_evidence"
+
                 finding = Finding(
                     organization_id=run.organization_id,
                     audit_id=audit.id,
@@ -426,7 +435,7 @@ class DefenceAuditorService:
                     title=finding_item.title,
                     description=finding_item.description,
                     severity=severity,
-                    evidence_state=finding_item.evidence_state if finding_item.evidence_state in ("confirmed_weakness", "insufficient_evidence", "contradictory_evidence") else "confirmed_weakness",
+                    evidence_state=ev_state,
                     finding_category=category,
                     likelihood_score=finding_item.likelihood_score,
                     impact_score=finding_item.impact_score,

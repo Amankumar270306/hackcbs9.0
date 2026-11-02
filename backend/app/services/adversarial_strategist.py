@@ -101,7 +101,7 @@ class AdversarialStrategistService:
                     "id": str(c.id),
                     "document_id": str(c.audit_document_id),
                     "filename": (doc.original_filename or doc.file_name) if doc else "document",
-                    "page_number": c.page_number,
+                    "page_number": c.page_start or c.page_number or 1,
                     "section_title": c.section_title or "General",
                     "chunk_text": getattr(c, "content", getattr(c, "chunk_text", "")),
                 })
@@ -347,7 +347,7 @@ class AdversarialStrategistService:
                             audit_document_id=matched_doc_id,
                             document_chunk_id=matched_chunk_id,
                             original_filename=matched_filename,
-                            page_number=ref_item.page_number,
+                            page_number=ref_item.page_number or (chunk_by_id[str(matched_chunk_id)].page_start if matched_chunk_id and str(matched_chunk_id) in chunk_by_id else None) or 1,
                             section_title=ref_item.section_title,
                             exact_excerpt=ref_item.exact_excerpt,
                             evidence_classification=evidence_class,
